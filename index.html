@@ -12,7 +12,8 @@
 :root{
   --ink:#2D2118; --bg:#FAF7F2; --card:#ffffff; --line:#E8DED0; --canvas:#EDE6DA;
   --accent:#C4713A; --accent-dark:#A85D2E; --green:#3F8A5C; --amber:#C08A1E; --red:#C0483F;
-  --ink-60:rgba(45,33,24,.6); --ink-45:rgba(45,33,24,.45); --ink-75:rgba(45,33,24,.75);
+  /* Alphas chosen so every muted tone clears 4.5:1 on both surfaces. */
+  --ink-60:rgba(45,33,24,.72); --ink-45:rgba(45,33,24,.66); --ink-75:rgba(45,33,24,.82);
   --radius:14px; --radius-sm:8px; --shadow:0 1px 2px rgba(45,33,24,.04);
   --font:"Poppins",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   --sidebar:230px;
@@ -69,7 +70,7 @@ h1,h2,h3{margin:0;font-weight:700;letter-spacing:-.01em}
 .grid.two{grid-template-columns:1fr 1fr}
 .grid.wide-narrow{grid-template-columns:1.4fr 1fr}
 .stack{display:flex;flex-direction:column;gap:18px}
-.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;max-width:100%}
 .row.between{justify-content:space-between}
 .mb{margin-bottom:20px}
 
@@ -96,9 +97,9 @@ label.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(
 .btn.neutral:hover{background:var(--bg)}
 .btn.danger{background:none;color:var(--red);border-color:rgba(192,72,63,.4)}
 .btn.danger:hover{background:rgba(192,72,63,.08)}
-.btn.sm{padding:5px 11px;font-size:12.5px}
+.btn.sm{padding:6px 11px;font-size:12.5px;min-height:26px}
 .btn.block{width:100%;text-align:center}
-.icon-btn{background:none;border:none;color:var(--red);opacity:.55;cursor:pointer;font-size:14px;padding:4px;line-height:1;font-family:inherit}
+.icon-btn{background:none;border:none;color:var(--red);opacity:.55;cursor:pointer;font-size:14px;padding:5px 6px;line-height:1;font-family:inherit;min-width:24px;min-height:24px}
 .icon-btn:hover{opacity:1}
 .form-grid{display:grid;gap:10px;align-items:end}
 
@@ -181,14 +182,16 @@ label.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(
 
 .checkbox{display:flex;align-items:center;gap:7px;font-size:13.5px;cursor:pointer;color:var(--ink);font-weight:500}
 .checkbox input{width:auto}
-.check{width:20px;height:20px;border-radius:6px;border:2px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:center;flex:none;cursor:pointer;color:#fff;font-size:12px;font-weight:800}
+.check{width:24px;height:24px;border-radius:6px;border:2px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:center;flex:none;cursor:pointer;color:#fff;font-size:12px;font-weight:800}
 .check.on{background:var(--green);border-color:var(--green)}
 .done{opacity:.45;text-decoration:line-through}
 .formula{background:var(--ink);border-radius:12px;padding:14px 20px;color:var(--bg);font-family:Georgia,"Times New Roman",serif;font-size:15px;opacity:.95}
 .label-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px 18px}
 .label-card .contains{border-top:1px solid var(--line);padding-top:10px;margin-top:10px;color:var(--red);font-weight:700;font-size:12px;letter-spacing:.03em}
 .hint{color:var(--ink-45);font-size:12.5px}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;background:#fff}
+.seg{display:inline-flex;max-width:100%;overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-sm);background:#fff}
+.seg button{flex:none}
+.row > .seg{min-width:0}
 .seg button{background:none;border:none;padding:7px 14px;font-family:inherit;font-size:13.5px;cursor:pointer;color:var(--ink-60);font-weight:500}
 .seg button[aria-pressed="true"]{background:var(--accent);color:#fff;font-weight:600}
 .menu-toggle{display:none}
@@ -210,6 +213,14 @@ label.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(
   .thead,.trow{min-width:560px}
   .cal-grid{grid-auto-rows:minmax(74px,auto)}
 }
+/* Fingers need more than a 22px target. */
+@media (pointer:coarse),(max-width:620px){
+  .icon-btn{padding:10px;font-size:15px}
+  .btn.sm{padding:9px 14px;font-size:13px}
+  .check{width:26px;height:26px}
+  .seg button{padding:10px 14px}
+  .nav-item{min-height:44px}
+}
 @media (max-width:620px){
   .sidebar{
     position:fixed;bottom:0;top:auto;left:0;right:0;width:100%;height:auto;flex-direction:row;
@@ -230,6 +241,7 @@ label.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(
   .bar-label{font-size:11px}
   .modal{padding:20px 18px}
   .toast{bottom:92px}
+  .row > input[data-change="searchOrders"]{width:100% !important}
 }
 
 /* ---------- print / PDF ---------- */
@@ -455,15 +467,36 @@ function seed() {
   };
 }
 
+const RESCUE_KEY = STORE_KEY + "/unreadable";
+/** Set when saved data could not be read, so the app can say so instead of
+    quietly handing the user a sample bakery in place of their records. */
+let loadFailure = null;
+
 function load() {
-  try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.schema) return migrate(parsed);
-    }
-  } catch (e) { console.warn("Could not read saved data:", e); }
+  let raw = null;
+  try { raw = localStorage.getItem(STORE_KEY); }
+  catch (e) { loadFailure = "This browser is blocking local storage, so nothing can be saved."; return seed(); }
+  if (!raw) return seed();
+  let parsed = null;
+  try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed) &&
+      (parsed.schema || Array.isArray(parsed.orders))) {
+    try { return migrate(parsed); }
+    catch (e) { console.error("Saved data could not be upgraded:", e); }
+  }
+  // Keep the unreadable text so it can still be downloaded and inspected —
+  // never overwrite it with a fresh book.
+  try { localStorage.setItem(RESCUE_KEY, raw); } catch (e) { /* nothing more we can do */ }
+  loadFailure = "Your saved data could not be read, so the sample bakery is showing instead. " +
+    "The unreadable file has been kept — download it from Settings before entering new data.";
   return seed();
+}
+
+function downloadRescue() {
+  let raw = null;
+  try { raw = localStorage.getItem(RESCUE_KEY); } catch (e) { /* ignore */ }
+  if (!raw) return toast("There is no unreadable file kept on this device.");
+  download("bakery-unreadable-data-" + stamp() + ".txt", raw, "text/plain");
 }
 
 const LISTS = ["customers", "products", "ingredients", "orders", "expenses", "tasks", "bakes", "waste", "social"];
@@ -513,6 +546,13 @@ function migrate(data) {
     if (o.costSnapshot && !num(o.costSnapshot.unit)) o.costSnapshot = null;
   }
   for (const b of data.bakes) if (!Array.isArray(b.deductions)) b.deductions = [];
+  for (const i of data.ingredients) {
+    i.stock = round2(Math.max(0, num(i.stock)));
+    i.reorder = round2(Math.max(0, num(i.reorder)));
+    i.cost = round2(Math.max(0, num(i.cost)));
+  }
+  for (const e of data.expenses) e.amount = round2(Math.max(0, num(e.amount)));
+  for (const w of data.waste) w.cost = round2(Math.max(0, num(w.cost)));
   for (const p of data.products) {
     if (!Array.isArray(p.recipe)) p.recipe = [];
     p.recipe = p.recipe.filter(l => l && l.ingredientId && num(l.qty) > 0);
@@ -561,14 +601,14 @@ function commit(fn, message) {
 /* ---------- money ---------- */
 const cur = () => (db && db.settings.currency) || "$";
 function money(n, opts) {
-  const v = Number(n) || 0;
+  const v = num(n) === 0 ? 0 : num(n);   // num() drops NaN and Infinity
   const compact = opts && opts.compact && Math.abs(v) >= 10000;
   const body = compact
     ? (v / 1000).toFixed(1).replace(/\.0$/, "") + "k"
     : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (v < 0 ? "-" : "") + cur() + body.replace(/^-/, "");
 }
-const money0 = n => cur() + Math.round(Number(n) || 0).toLocaleString();
+const money0 = n => cur() + (Math.round(num(n)) + 0).toLocaleString();   // + 0 normalises -0
 
 /* ---------- derived business logic ---------- */
 const byId = (list, id) => (list || []).find(x => x.id === id);
@@ -625,6 +665,8 @@ const depositDue = o => round2(Math.max(0, num(o.depositRequired) - receivedOf(o
 const isCommitted = o => o.status === "booked" || o.status === "paid";
 const outstandingOf = o => (isCommitted(o) ? balanceOf(o) : 0);
 const isFullyPaid = o => receivedOf(o) >= num(o.total) - 0.005;
+/** Cash taken beyond the agreed price — usually a double-entered payment. */
+const overpaidBy = o => round2(Math.max(0, receivedOf(o) - num(o.total)));
 /** A quote expires a set number of days after it was raised — not on the
     date the cake is wanted, which may be months later. */
 const quoteExpiry = o => iso(new Date(parseISO(o.createdAt || o.date).getTime() +
@@ -902,6 +944,17 @@ document.addEventListener("change", e => {
 });
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && $("#overlay").innerHTML) closeModal();
+  // Keep Tab inside an open dialog — outside it is unreachable anyway.
+  if (e.key === "Tab" && $("#overlay").innerHTML) {
+    const items = [...$("#overlay").querySelectorAll('button,input,select,textarea,[tabindex="0"]')]
+      .filter(el => !el.disabled && el.offsetParent !== null);
+    if (items.length) {
+      const first = items[0], last = items[items.length - 1];
+      const here = document.activeElement;
+      if (e.shiftKey && (here === first || !$("#overlay").contains(here))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (here === last || !$("#overlay").contains(here))) { e.preventDefault(); first.focus(); }
+    }
+  }
   if (e.key === "Enter" && e.target.matches("[data-f][data-enter]")) {
     const btn = e.target.closest("[data-form]").querySelector("[data-submit]");
     if (btn) btn.click();
@@ -1071,16 +1124,21 @@ VIEWS.calendar = function () {
 VIEWS.orders = function () {
   const filter = ui.filter || "all";
   const q = (ui.q || "").toLowerCase();
-  const rows = db.orders
+  const matched = db.orders
     .filter(o => filter === "all" || o.status === filter)
-    .filter(o => !q || (customerName(o.customerId) + " " + productName(o.productId) + " " + o.notes).toLowerCase().includes(q))
+    .filter(o => !q || (customerName(o.customerId) + " " + productName(o.productId) + " " + (o.notes || "")).toLowerCase().includes(q))
     .sort((a, b) => b.date.localeCompare(a.date));
+  // Show the newest slice by default; a long history should not slow the
+  // page down when search and the filters are right there.
+  const LIMIT = 150;
+  const rows = ui.showAllOrders ? matched : matched.slice(0, LIMIT);
+  const hidden = matched.length - rows.length;
 
   const cols = STATUSES.map(s => {
     const list = db.orders.filter(o => o.status === s).sort((a, b) => a.date.localeCompare(b.date));
     return '<div class="kan-col" data-drop="' + s + '">' +
       '<div class="kan-head"><span>' + STATUS_LABEL[s] + '</span><span class="count">' + list.length + '</span></div>' +
-      (list.length ? list.map(o => {
+      (list.length ? list.slice(0, 40).map(o => {
         const bal = balanceOf(o);
         const got = receivedOf(o);
         const balLabel = o.status === "paid" ? money(o.total) + " settled"
@@ -1095,7 +1153,8 @@ VIEWS.orders = function () {
             balLabel + '</div>' +
           (s !== "paid" ? '<button class="btn ghost sm" style="margin-top:8px" data-act="advance" data-id="' + o.id + '">Move to ' + STATUS_LABEL[STATUSES[STATUSES.indexOf(s) + 1]] + '</button>' : "") +
         '</div>';
-      }).join("") : '<div class="hint" style="padding:8px 2px">Drag an order here.</div>') +
+      }).join("") + (list.length > 40 ? '<div class="hint" style="padding:6px 2px">+ ' + (list.length - 40) + ' more in the table below.</div>' : "")
+        : '<div class="hint" style="padding:8px 2px">Move an order here.</div>') +
     '</div>';
   }).join("");
 
@@ -1120,7 +1179,7 @@ VIEWS.orders = function () {
       '<div class="row between" style="margin-bottom:14px">' +
         '<div class="card-title" style="margin:0">All orders</div>' +
         '<div class="row">' +
-          '<input placeholder="Search…" value="' + esc(ui.q || "") + '" data-change="searchOrders" style="width:180px">' +
+          '<input placeholder="Search…" aria-label="Search orders" value="' + esc(ui.q || "") + '" data-change="searchOrders" style="width:180px">' +
           '<div class="seg">' + ["all"].concat(STATUSES).map(s =>
             '<button data-act="filterOrders" data-value="' + s + '" aria-pressed="' + (filter === s ? "true" : "false") + '">' +
             (s === "all" ? "All" : STATUS_LABEL[s]) + '</button>').join("") + '</div>' +
@@ -1136,8 +1195,10 @@ VIEWS.orders = function () {
             '<span class="muted">' + fmtDate(o.date) + '</span>' +
             '<span class="strong num">' + money(o.total) +
               (receivedOf(o) > 0 || isCommitted(o)
-                ? '<br><span class="hint">' + money(receivedOf(o)) + ' in' +
-                  (outstandingOf(o) > 0 ? ' · ' + money(outstandingOf(o)) + ' due' : "") + '</span>'
+                ? '<br><span class="hint"' + (overpaidBy(o) > 0 ? ' style="color:var(--amber);font-weight:600"' : "") + '>' +
+                  money(receivedOf(o)) + ' in' +
+                  (outstandingOf(o) > 0 ? ' · ' + money(outstandingOf(o)) + ' due' : "") +
+                  (overpaidBy(o) > 0 ? ' · ' + money(overpaidBy(o)) + ' over' : "") + '</span>'
                 : "") + '</span>' +
             '<span>' + pill(STATUS_LABEL[o.status], STATUS_TONE[o.status]) +
               (quoteExpired(o) ? '<br>' + pill("Expired", "red") : "") + '</span>' +
@@ -1147,6 +1208,15 @@ VIEWS.orders = function () {
             '</span>' +
           '</div>').join("") : emptyRow("No orders match. Add one above.")) +
       '</div>' +
+      (hidden > 0
+        ? '<div class="row between" style="padding-top:14px">' +
+            '<span class="hint">Showing the newest ' + rows.length + ' of ' + matched.length + ' orders.</span>' +
+            '<button class="btn ghost sm" data-act="showAllOrders">Show all ' + matched.length + '</button>' +
+          '</div>'
+        : (ui.showAllOrders && matched.length > LIMIT
+            ? '<div class="row between" style="padding-top:14px"><span class="hint">Showing all ' + matched.length + ' orders.</span>' +
+              '<button class="btn ghost sm" data-act="showFewerOrders">Show newest ' + LIMIT + '</button></div>'
+            : "")) +
     '</section>';
 };
 
@@ -1179,6 +1249,10 @@ function openOrderModal(id) {
           '<span class="strong" style="font-size:14px">Payments received</span>' +
           '<span class="hint">' + money(got) + ' of ' + money(o.total) +
             (num(o.depositRequired) > 0 ? ' · deposit ' + (depositDue(o) > 0 ? money(depositDue(o)) + ' still due' : 'covered') : "") + '</span>' +
+        '</div>' +
+        (overpaidBy(o) > 0 ? '<div class="alert amber" style="margin-bottom:10px"><span class="dot"></span>' +
+          'Overpaid by ' + money(overpaidBy(o)) + ' — check for a payment entered twice.</div>' : "") +
+        '<div>' +
         '</div>' +
         (pays.length ? pays.slice().sort((a, b) => a.date.localeCompare(b.date)).map(pay =>
           '<div class="row between" style="padding:7px 0;border-bottom:1px solid var(--line)">' +
@@ -1535,6 +1609,9 @@ VIEWS.payments = function () {
       '<div class="card dark"><div style="opacity:.6;font-size:14px">Net profit</div>' +
         '<div class="num" style="color:var(--accent);font-size:26px;font-weight:800;margin-top:6px">' + money0(net) + '</div></div>' +
     '</div>' +
+    (() => { const over = round2(sum(db.orders, overpaidBy));
+      return over > 0 ? '<div class="alert amber mb"><span class="dot"></span>' + money(over) +
+        ' has been received beyond what was charged. Check the orders marked "over" for a payment entered twice.</div>' : ""; })() +
     '<p class="hint" style="margin:-8px 0 20px">Booked sales are orders the customer has agreed to. Cash received is money actually ' +
       'in your hands. Profit is booked sales less cost of goods (' + money0(totalCogs) + ') and expenses (' + money0(totalExpenses) + ')' +
       (expected > 0 ? ' — a further ' + money0(expected) + ' sits in open enquiries and quotes.' : '.') + '</p>' +
@@ -1726,6 +1803,8 @@ VIEWS.settings = function () {
 
       '<div class="stack">' +
         card("Backup & restore",
+          (loadFailure ? '<div class="alert red" style="margin-bottom:12px"><span class="dot"></span><span>' + esc(loadFailure) + '</span></div>' +
+            '<button class="btn danger block" style="margin-bottom:14px" data-act="downloadRescue">Download the unreadable file</button>' : "") +
           '<p class="muted" style="margin:0 0 4px">Your data auto-saves on this device as you work. Download a backup file for safekeeping, or restore one on a new computer.</p>' +
           '<p class="hint" style="margin:0 0 14px">Last backup: ' + (db.meta.lastBackup ? fmtLongDate(db.meta.lastBackup) : "never") + '</p>' +
           '<div class="row">' +
@@ -2043,9 +2122,21 @@ const ACTIONS = {
     const f = readForm(el);
     const amount = round2(f.payAmount);
     if (!(amount > 0)) return toast("Enter an amount to record.");
-    applyOrderForm(d.id, f, null, o => addPayment(o, amount, f.payDate || todayISO(), ""));
-    openOrderModal(d.id);
-    toast("Payment of " + money(amount) + " recorded.");
+    const o = byId(db.orders, d.id);
+    const record = () => {
+      applyOrderForm(d.id, f, null, ord => addPayment(ord, amount, f.payDate || todayISO(), ""));
+      openOrderModal(d.id);
+      toast("Payment of " + money(amount) + " recorded.");
+    };
+    // More than the balance is usually the same payment entered twice.
+    const over = round2(amount - balanceOf(o));
+    if (over > 0.005) {
+      return confirmDo("That is more than is owed", "The balance on this order is " + money(balanceOf(o)) +
+        ", so recording " + money(amount) + " leaves it overpaid by " + money(over) +
+        ". Check it is not a payment you have already entered.",
+        "Record anyway", record);
+    }
+    record();
   },
   payDeposit(d, el) {
     const f = readForm(el);
@@ -2070,7 +2161,6 @@ const ACTIONS = {
       setStatus(o, next);
     });
   },
-  setStatus(d) { commit(() => { const o = byId(db.orders, d.id); if (o) setStatus(o, d.value); }); },
   markPaid(d, el) {
     const inDialog = !!(el && el.closest("[data-form='editOrder']"));
     if (inDialog) {
@@ -2090,6 +2180,8 @@ const ACTIONS = {
       "Delete order", () => commit(() => removeById(db.orders, d.id), "Order deleted."));
   },
   filterOrders(d) { ui.filter = d.value; render(); },
+  showAllOrders() { ui.showAllOrders = true; render(); },
+  showFewerOrders() { ui.showAllOrders = false; render(); },
   searchOrders(d, el) {
     ui.q = el.value;
     render();
@@ -2196,8 +2288,9 @@ const ACTIONS = {
     if (!f.name || !f.name.trim()) return toast("Name the ingredient.");
     if (sameName(db.ingredients, f.name)) return toast("You already track an ingredient called " + f.name.trim() + ".");
     commit(() => db.ingredients.push({
-      id: uid(), name: f.name.trim(), unit: f.unit || "kg", stock: num(f.stock),
-      reorder: num(f.reorder), cost: num(f.cost), expiry: f.expiry || ""
+      id: uid(), name: f.name.trim(), unit: f.unit || "kg",
+      stock: round2(Math.max(0, num(f.stock))), reorder: round2(Math.max(0, num(f.reorder))),
+      cost: round2(Math.max(0, num(f.cost))), expiry: f.expiry || ""
     }), "Ingredient added.");
     clearForm(el);
   },
@@ -2347,6 +2440,7 @@ const ACTIONS = {
       depositPct: clamp(num(f.depositPct), 0, 100), quoteValidDays: Math.max(1, num(f.quoteValidDays))
     }), "Settings saved.");
   },
+  downloadRescue: () => downloadRescue(),
   exportBackup() {
     db.meta.lastBackup = todayISO();
     save();
@@ -2513,6 +2607,7 @@ document.addEventListener("keydown", e => {
 
 /* ---------- boot ---------- */
 db = load();
+if (loadFailure) setTimeout(() => toast(loadFailure.split(".")[0] + "."), 400);
 const startView = location.hash.replace("#", "");
 if (VIEWS[startView]) view = startView;
 render();
