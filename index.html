@@ -510,6 +510,17 @@ function migrate(data) {
   data.settings = Object.assign({}, base.settings, data.settings || {});
   data.meta = Object.assign({}, base.meta, data.meta || {});
 
+  // A backup can be hand-edited, so settings that drive money are held to the
+  // same limits the Settings screen enforces. A deposit of 500% or a margin of
+  // 200% would otherwise quietly distort every figure derived from them.
+  const s = data.settings;
+  s.depositPct = clamp(num(s.depositPct), 0, 100);
+  s.defaultMargin = clamp(num(s.defaultMargin), 0, 95);
+  s.quoteValidDays = Math.max(1, Math.round(num(s.quoteValidDays)) || 14);
+  s.monthlyGoal = round2(Math.max(0, num(s.monthlyGoal)));
+  s.taxRate = clamp(num(s.taxRate), 0, 100);
+  s.currency = String(s.currency || "$").slice(0, 3) || "$";
+
   // Every record needs an id; anything without one would be undeletable.
   for (const key of LISTS) for (const row of data[key]) if (row && !row.id) row.id = uid();
 
@@ -538,7 +549,9 @@ function migrate(data) {
     if (!Array.isArray(o.payments)) o.payments = [];
     o.payments = o.payments.filter(pay => pay && num(pay.amount) > 0)
       .map(pay => ({ id: pay.id || uid(), amount: round2(pay.amount), date: pay.date || o.date || todayISO(), note: pay.note || "" }));
-    o.total = round2(o.total);
+    // A negative price would read as a negative sale on the P&L, so the total
+    // is floored before anything is derived from it.
+    o.total = round2(Math.max(0, num(o.total)));
     o.qty = Math.max(1, parseInt(o.qty, 10) || 1);
     o.depositRequired = clamp(round2(o.depositRequired), 0, num(o.total));
     o.createdAt = o.createdAt || o.date || todayISO();
@@ -557,6 +570,10 @@ function migrate(data) {
     if (!Array.isArray(p.recipe)) p.recipe = [];
     p.recipe = p.recipe.filter(l => l && l.ingredientId && num(l.qty) > 0);
     if (!Array.isArray(p.allergens)) p.allergens = [];
+    p.ingCost = round2(Math.max(0, num(p.ingCost)));
+    p.labour = round2(Math.max(0, num(p.labour)));
+    p.overhead = round2(Math.max(0, num(p.overhead)));
+    p.margin = clamp(num(p.margin), 0, 95);
   }
   data.schema = SCHEMA;
   return data;
@@ -2103,7 +2120,7 @@ const ACTIONS = {
     if (!f.productId) return toast("Pick a product first.");
     const p = productById(f.productId);
     const qty = Math.max(1, parseInt(f.qty, 10) || 1);
-    const total = f.total !== "" ? num(f.total) : (p ? costing(p).price * qty : 0);
+    const total = Math.max(0, f.total !== "" ? num(f.total) : (p ? costing(p).price * qty : 0));
     commit(() => db.orders.push({
       id: uid(), customerId: f.customerId, productId: f.productId, qty,
       date: f.date || todayISO(), status: "enquiry", total: round2(total),
@@ -2228,7 +2245,8 @@ const ACTIONS = {
     if (sameName(db.products, f.name)) return toast("You already have a product called " + f.name.trim() + ".");
     commit(() => db.products.push({
       id: uid(), name: f.name.trim(), category: f.category || "",
-      ingCost: num(f.ingCost), labour: num(f.labour), overhead: num(f.overhead),
+      ingCost: round2(Math.max(0, num(f.ingCost))), labour: round2(Math.max(0, num(f.labour))),
+      overhead: round2(Math.max(0, num(f.overhead))),
       margin: clamp(num(f.margin) || num(db.settings.defaultMargin), 0, 95),
       allergens: f.allergens || [], recipe: [], archived: false
     }), "Product added.");
@@ -2257,8 +2275,8 @@ const ACTIONS = {
       const p = productById(d.id);
       if (p) Object.assign(p, {
         name: f.name || p.name, category: f.category, recipe,
-        ingCost: recipe.length ? num(p.ingCost) : num(f.ingCost),
-        labour: num(f.labour), overhead: num(f.overhead),
+        ingCost: round2(Math.max(0, recipe.length ? num(p.ingCost) : num(f.ingCost))),
+        labour: round2(Math.max(0, num(f.labour))), overhead: round2(Math.max(0, num(f.overhead))),
         margin: clamp(num(f.margin), 0, 95), allergens: f.allergens || []
       });
     }, "Product saved.");
