@@ -797,7 +797,7 @@ const NAV = [
   { id: "customers",  label: "Customers",           short: "People" },
   { id: "products",   label: "Products & costing",  short: "Products" },
   { id: "inventory",  label: "Inventory",           short: "Stock" },
-  { id: "payments",   label: "Payments & P&L",      short: "Money" },
+  { id: "payments",   label: "Payments & performance", short: "Money" },
   { id: "kitchen",    label: "Tasks & bake log",    short: "Kitchen" },
   { id: "settings",   label: "Settings & backup",   short: "Setup" }
 ];
@@ -820,7 +820,14 @@ function render() {
       '</div><div class="spacer"></div>' +
       '<div class="sidebar-foot">v1.0 · offline<br>' + esc(db.settings.bakeryName) + '</div>' +
     '</nav>' +
-    '<main class="main" id="main" tabindex="-1">' + (VIEWS[view] || VIEWS.dashboard)() + '</main>';
+    '<main class="main" id="main" tabindex="-1">' +
+      // If saved data could not be read, say so on every screen, not just in
+      // Settings — otherwise the sample bakery looks like the real book.
+      (loadFailure && view !== "settings"
+        ? '<div class="alert red" style="margin-bottom:16px"><span class="dot"></span><span>' + esc(loadFailure) +
+          ' <button class="btn danger sm" data-act="go" data-view="settings">Open Settings</button></span></div>'
+        : "") +
+      (VIEWS[view] || VIEWS.dashboard)() + '</main>';
   const m = $("#app .main");
   if (m && view === renderedView) m.scrollTop = scroll;
   renderedView = view;
@@ -866,14 +873,29 @@ function modal(title, sub, body, actions) {
   if (first) first.focus();
 }
 
-function confirmDo(title, message, label, fn) {
+function confirmDo(title, message, label, fn, cls) {
   pendingConfirm = fn;
+  pendingCancel = null;
   modal(title, message, "", [
     { label: "Cancel", act: "closeModal" },
-    { label: label, act: "confirmYes", cls: "danger" }
+    { label: label, act: "confirmYes", cls: cls || "danger" }
   ]);
 }
+
+/** Moving an order to Paid records whatever is still owed as cash taken
+    today, so it is never done silently — however the move was made, from a
+    button, the status list, the stage arrow or a dragged card. Cancelling
+    leaves both the status and the payments exactly as they were. */
+function confirmPaid(o, proceed) {
+  const bal = balanceOf(o);
+  if (!(bal > 0.005)) return proceed();
+  confirmDo("Mark as Paid?", "This will record " + money(bal) + " as received today.",
+    "Mark as paid", proceed, "primary");
+}
 let pendingConfirm = null;
+/** What to do when a confirmation is declined, where cancelling still has
+    work of its own — keeping an order's other edits, say. Usually null. */
+let pendingCancel = null;
 /** Holds the data a restore replaced, so it can be put back. */
 let undoSnapshot = null;
 
@@ -1617,7 +1639,7 @@ VIEWS.payments = function () {
     '<div class="card"><div class="kpi-label">' + esc(label) + '</div>' +
     '<div class="num" style="font-size:26px;font-weight:700;margin-top:6px' + (color ? ";color:" + color : "") + '">' + esc(value) + '</div></div>';
 
-  return header("Payments, expenses & P&L", "Know exactly how the business is doing.") +
+  return header("Payments, expenses & business performance", "Know exactly how the business is doing.") +
     '<div class="grid kpis mb">' +
       stat("Booked sales", money0(bookedSales)) +
       stat("Cash received", money0(totalReceived), "var(--green)") +
@@ -1631,11 +1653,15 @@ VIEWS.payments = function () {
         ' has been received beyond what was charged. Check the orders marked "over" for a payment entered twice.</div>' : ""; })() +
     '<p class="hint" style="margin:-8px 0 20px">Booked sales are orders the customer has agreed to. Cash received is money actually ' +
       'in your hands. Profit is booked sales less cost of goods (' + money0(totalCogs) + ') and expenses (' + money0(totalExpenses) + ')' +
-      (expected > 0 ? ' — a further ' + money0(expected) + ' sits in open enquiries and quotes.' : '.') + '</p>' +
+      (expected > 0 ? ' — a further ' + money0(expected) + ' sits in open enquiries and quotes.' : '.') + '<br>' +
+      '<strong>Which month a figure lands in:</strong> sales, cost of goods and profit count in the month the order is ' +
+      'wanted (its fulfilment date); cash received counts in the month the payment was actually taken. That is why the two ' +
+      'can differ. This is a business performance view to run the bakery by, not a formal set of accounts — your accountant ' +
+      'or tax return may count the same money on different dates.</p>' +
 
     '<section class="card mb">' +
       '<div class="row between" style="margin-bottom:16px">' +
-        '<div class="card-title" style="margin:0">Monthly revenue vs profit</div>' +
+        '<div class="card-title" style="margin:0">Business performance by month</div>' +
         '<div class="legend"><span><i class="swatch"></i>Booked sales</span>' +
           '<span><i class="swatch green"></i>Cash received</span><span><i class="swatch ink"></i>Net profit</span></div>' +
       '</div>' +
@@ -1645,8 +1671,8 @@ VIEWS.payments = function () {
         { v: Math.max(0, m.profit), cls: "ink", title: "Net profit " + money(m.profit) }
       ] })), 200) +
       '<div class="row between" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">' +
-        '<span class="hint">Net profit = booked sales &minus; cost of goods &minus; expenses</span>' +
-        '<button class="btn ghost sm" data-act="printPL">Print profit &amp; loss</button>' +
+        '<span class="hint">Net profit = booked sales &minus; cost of goods &minus; expenses, by fulfilment date</span>' +
+        '<button class="btn ghost sm" data-act="printPL">Print business performance</button>' +
       '</div>' +
     '</section>' +
 
@@ -1993,7 +2019,7 @@ function plDoc() {
   });
   const tot = months.reduce(add, { bookedSales: 0, expenses: 0, cogs: 0, profit: 0, cashReceived: 0 });
   const owed = round2(sum(db.orders, outstandingOf));
-  return '<div class="doc">' + docHead("Profit & loss", "Last 12 months", ["Printed " + fmtLongDate(todayISO())]) +
+  return '<div class="doc">' + docHead("Business performance", "Last 12 months, by fulfilment date", ["Printed " + fmtLongDate(todayISO())]) +
     '<table style="font-size:13px"><thead><tr><th>Month</th><th class="r">Orders</th><th class="r">Booked sales</th>' +
       '<th class="r">Cost of goods</th><th class="r">Expenses</th><th class="r">Net profit</th><th class="r">Cash received</th></tr></thead><tbody>' +
     months.map(m => '<tr><td>' + m.label + " " + m.year + '</td><td class="r">' + m.count + '</td><td class="r">' + money(m.bookedSales) +
@@ -2002,10 +2028,12 @@ function plDoc() {
     '</tbody></table>' +
     '<div class="doc-total"><span>Net profit, 12 months</span><span>' + money(tot.profit) + '</span></div>' +
     '<div class="doc-note"><strong>How these are counted.</strong> Booked sales are orders the customer has agreed to ' +
-      '(booked or paid), dated by when the order is wanted. Cost of goods is each order&rsquo;s recipe cost, locked at the ' +
+      '(booked or paid), dated by when the order is wanted — its fulfilment date. Cost of goods is each order&rsquo;s recipe cost, locked at the ' +
       'moment it was committed, so past months do not move when ingredient prices change. Net profit = booked sales ' +
       '&minus; cost of goods &minus; expenses. Cash received is money actually taken in the month, which may fall in a ' +
       'different month from the sale.<br>' +
+      '<strong>This is a business performance summary, not a formal set of accounts.</strong> It is dated by fulfilment, ' +
+      'so a bookkeeper or tax return may count the same money in different months. Use it to run the bakery, not to file with.<br>' +
       '12-month totals — booked sales ' + money(tot.bookedSales) + ' · cost of goods ' + money(tot.cogs) +
       ' · expenses ' + money(tot.expenses) + ' · cash received ' + money(tot.cashReceived) +
       '. Still outstanding across all booked orders: ' + money(owed) + '.</div></div>';
@@ -2062,7 +2090,7 @@ function sheets() {
       db.orders.flatMap(o => paymentsOf(o).map(pay =>
         [customerName(o.customerId), o.date, pay.date, num(pay.amount), pay.note || "",
           num(o.total), receivedOf(o), outstandingOf(o)]))],
-    ["Profit and loss", ["Month", "Orders", "Booked sales", "Cost of goods", "Expenses", "Net profit", "Cash received", "Outstanding"],
+    ["Business performance", ["Month", "Orders", "Booked sales", "Cost of goods", "Expenses", "Net profit", "Cash received", "Outstanding"],
       lastMonths(12).map(m => [m.label + " " + m.year, m.count, m.bookedSales, m.cogs, m.expenses, m.profit, m.cashReceived, m.outstanding])],
     ["Bake log", ["Product", "Batches", "Date", "Ingredients deducted", "Notes"],
       db.bakes.map(b => [productName(b.productId), num(b.qty) || 1, b.date,
@@ -2111,7 +2139,8 @@ const ACTIONS = {
   go: d => go(d.view),
   closeModal: () => closeModal(),
   closeModalBack: () => closeModal(),
-  confirmYes: () => { const fn = pendingConfirm; pendingConfirm = null; closeModal(); if (fn) fn(); },
+  confirmYes: () => { const fn = pendingConfirm; pendingConfirm = pendingCancel = null; closeModal(); if (fn) fn(); },
+  confirmNo: () => { const fn = pendingCancel; pendingConfirm = pendingCancel = null; closeModal(); if (fn) fn(); },
 
   /* ---- orders ---- */
   addOrder(d, el) {
@@ -2131,7 +2160,21 @@ const ACTIONS = {
   },
   openOrder: d => openOrderModal(d.id),
   saveOrder(d, el) {
-    if (!applyOrderForm(d.id, readForm(el), "Order updated.")) return;
+    const o = byId(db.orders, d.id);
+    if (!o) return;
+    const f = readForm(el);   // read before any confirm replaces the dialog
+    // Choosing Paid from the status list would record the balance as cash, so
+    // it asks first. Cancelling keeps every other edit and leaves the status.
+    if (f.status === "paid" && o.status !== "paid" && balanceOf(o) > 0.005) {
+      pendingConfirm = () => { applyOrderForm(d.id, f, "Order updated."); closeModal(); };
+      pendingCancel = () => {
+        applyOrderForm(d.id, Object.assign({}, f, { status: o.status }), "Order updated — status left unchanged.");
+        closeModal();
+      };
+      return modal("Mark as Paid?", "This will record " + money(balanceOf(o)) + " as received today.", "",
+        [{ label: "Cancel", act: "confirmNo" }, { label: "Mark as paid", act: "confirmYes", cls: "primary" }]);
+    }
+    if (!applyOrderForm(d.id, f, "Order updated.")) return;
     closeModal();
   },
   /** Records cash typed into the dialog, keeping any other edits. */
@@ -2171,21 +2214,26 @@ const ACTIONS = {
     toast("Payment removed.");
   },
   advance(d) {
-    commit(() => {
-      const o = byId(db.orders, d.id);
-      if (!o) return;
-      const next = STATUSES[Math.min(STATUSES.length - 1, STATUSES.indexOf(o.status) + 1)];
-      setStatus(o, next);
-    });
+    const o = byId(db.orders, d.id);
+    if (!o) return;
+    const next = STATUSES[Math.min(STATUSES.length - 1, STATUSES.indexOf(o.status) + 1)];
+    const step = () => commit(() => setStatus(o, next));
+    if (next === "paid") return confirmPaid(o, step);
+    step();
   },
   markPaid(d, el) {
+    const o = byId(db.orders, d.id);
+    if (!o) return;
     const inDialog = !!(el && el.closest("[data-form='editOrder']"));
     if (inDialog) {
-      applyOrderForm(d.id, readForm(el), null, o => addPayment(o, balanceOf(o), todayISO(), "Balance"));
-      openOrderModal(d.id);
-      return toast("Balance recorded.");
+      const f = readForm(el);   // read before the confirm replaces the dialog
+      return confirmPaid(o, () => {
+        applyOrderForm(d.id, f, null, ord => addPayment(ord, balanceOf(ord), todayISO(), "Balance"));
+        openOrderModal(d.id);
+        toast("Balance recorded.");
+      });
     }
-    commit(() => { const o = byId(db.orders, d.id); if (o) setStatus(o, "paid"); }, "Balance recorded — order paid.");
+    confirmPaid(o, () => commit(() => setStatus(o, "paid"), "Balance recorded — order paid."));
   },
   deleteOrder(d) {
     const o = byId(db.orders, d.id);
@@ -2609,7 +2657,13 @@ document.addEventListener("drop", e => {
   if (!col || !dragId) return;
   e.preventDefault();
   const id = dragId; dragId = null;
-  commit(() => { const o = byId(db.orders, id); if (o && o.status !== col.dataset.drop) setStatus(o, col.dataset.drop); });
+  const o = byId(db.orders, id), to = col.dataset.drop;
+  if (!o || o.status === to) return;
+  // A card dropped on Paid is easy to do by accident, so it asks like any
+  // other route to Paid rather than quietly taking the money as received.
+  const move = () => commit(() => setStatus(o, to));
+  if (to === "paid") return confirmPaid(o, move);
+  move();
 });
 document.addEventListener("dragend", () => {
   dragId = null;

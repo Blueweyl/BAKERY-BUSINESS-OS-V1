@@ -15,7 +15,7 @@ Nine modules, all sharing one set of records:
 | **Customers** | Contact details, notes, order history and lifetime spend, calculated automatically |
 | **Products & costing** | A recipe editor priced from live inventory, the pricing formula, profit per unit and the allergen matrix |
 | **Inventory** | Stock levels, reorder points, expiry warnings, stock value and a shopping list |
-| **Payments & P&L** | Booked sales, cash received, outstanding and expenses, with 12 months of profit |
+| **Payments & performance** | Booked sales, cash received, outstanding and expenses, with 12 months of profit |
 | **Tasks & bake log** | To-dos, what came out of the oven, waste tracking and a social planner |
 | **Settings & backup** | Bakery details for documents, exports, and backup / restore |
 
@@ -56,6 +56,14 @@ questions:
 | **Outstanding** | Booked sales not yet paid for. An enquiry or an open quote is never a debt. |
 | **Net profit** | Booked sales − cost of goods − expenses. |
 
+Sales, cost of goods and profit count in the month the order is **wanted** —
+its fulfilment date. Cash received counts in the month the payment was
+**taken**. That is why the two can differ, and it is deliberate: it tells you
+what the bakery earned in a month separately from what landed in the till.
+It is a business performance view to run the bakery by, not a formal set of
+accounts; a bookkeeper or tax return may count the same money on different
+dates.
+
 Booking an order does not record a payment. `depositRequired` is what the
 customer was *asked* for; cash exists only as payment records against the
 order, so the app can never show money that nobody handed over. Partial
@@ -65,6 +73,10 @@ balance outstanding until the rest arrives.
 When an order is booked or paid, its cost of goods is **frozen** from the
 recipe at that moment. Ingredient prices can rise afterwards without
 rewriting last quarter's profit. New quotes still price from today's costs.
+
+Moving an order to **Paid** records whatever is still owed as cash taken
+today, so it always asks first and names the exact amount — whether you use
+the button, the status list, the stage arrow or drag a card across the board.
 
 Quotes expire `quoteValidDays` after the day they were raised — not on the
 date the cake is wanted, which may be months later.
