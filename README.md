@@ -78,6 +78,11 @@ Moving an order to **Paid** records whatever is still owed as cash taken
 today, so it always asks first and names the exact amount — whether you use
 the button, the status list, the stage arrow or drag a card across the board.
 
+Ingredient warnings are tiered so red keeps its meaning: **red** for anything
+already expired, going off within three days, or out of stock; **amber** for a
+use-by within a fortnight or stock at or below its reorder point. Butter due in
+a fortnight does not shout as loudly as cream that went off yesterday.
+
 Quotes expire `quoteValidDays` after the day they were raised — not on the
 date the cake is wanted, which may be months later.
 

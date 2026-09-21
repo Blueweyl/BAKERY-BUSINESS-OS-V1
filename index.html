@@ -713,18 +713,30 @@ function addPayment(o, amount, date, note) {
   return true;
 }
 
+/** Severity, most urgent first. Red is reserved for what must be dealt with
+    today — anything already gone off, going off within three days, or run
+    out. A fortnight's notice is amber: worth planning around, not an alarm,
+    so red keeps its meaning instead of being background noise. */
 function ingredientStatus(i) {
-  const days = i.expiry ? daysUntil(i.expiry) : null;
+  const days = expiryDays(i);
   if (days !== null && days <= 0) return { key: "expired", label: "Expired", tone: "red" };
-  if (days !== null && days <= 14) return { key: "expiring", label: "Expiring", tone: "red" };
+  if (days !== null && days <= 3) return { key: "expiring", label: "Expiring", tone: "red" };
   if (num(i.stock) <= 0) return { key: "out", label: "Out of stock", tone: "red" };
+  if (days !== null && days <= EXPIRY_SOON) return { key: "soon", label: "Use soon", tone: "amber" };
   if (num(i.stock) <= num(i.reorder)) return { key: "low", label: "Low", tone: "amber" };
   return { key: "good", label: "Good", tone: "green" };
 }
 
 const stockValue = () => sum(db.ingredients, i => num(i.stock) * num(i.cost));
-const lowStock = () => db.ingredients.filter(i => ["low", "out"].includes(ingredientStatus(i).key));
-const expiringSoon = () => db.ingredients.filter(i => ["expiring", "expired"].includes(ingredientStatus(i).key));
+/** Days until an ingredient's use-by, or null if it has no date. */
+const expiryDays = i => (i.expiry ? daysUntil(i.expiry) : null);
+/** Red for expiry runs to three days; the amber band runs to a fortnight. */
+const EXPIRY_CRITICAL = 3, EXPIRY_SOON = 14;
+const expiryIsCritical = i => { const d = expiryDays(i); return d !== null && d <= EXPIRY_CRITICAL; };
+// Both lists ask their own question directly rather than reading the badge,
+// so an ingredient that is out of stock AND near its date appears on both.
+const lowStock = () => db.ingredients.filter(i => num(i.stock) <= num(i.reorder));
+const expiringSoon = () => db.ingredients.filter(i => { const d = expiryDays(i); return d !== null && d <= EXPIRY_SOON; });
 
 /** Revenue, expenses and profit for a given YYYY-MM. */
 /** One month on two bases, kept deliberately separate:
@@ -758,7 +770,8 @@ function alerts() {
   const out = [];
   for (const i of expiringSoon()) {
     const d = daysUntil(i.expiry);
-    out.push({ level: "critical", text: d <= 0 ? i.name + " expired " + Math.abs(d) + " day" + (Math.abs(d) === 1 ? "" : "s") + " ago" : i.name + " expires in " + d + " day" + (d === 1 ? "" : "s") });
+    out.push({ level: expiryIsCritical(i) ? "critical" : "soon",
+      text: d <= 0 ? i.name + " expired " + Math.abs(d) + " day" + (Math.abs(d) === 1 ? "" : "s") + " ago" : i.name + " expires in " + d + " day" + (d === 1 ? "" : "s") });
   }
   for (const o of db.orders) {
     if (o.status === "booked" && daysUntil(o.date) < 0 && balanceOf(o) > 0)
@@ -807,7 +820,10 @@ const VIEWS = {}; // populated below, one render function per module
 function render() {
   const main = $("#app .main");
   const scroll = main ? main.scrollTop : 0;
-  const badges = { orders: alerts().filter(a => a.level === "critical").length, inventory: lowStock().length + expiringSoon().length };
+  // Count ingredients needing attention, not entries across two lists — one
+  // that is both out of stock and near its date is still a single ingredient.
+  const badges = { orders: alerts().filter(a => a.level === "critical").length,
+    inventory: db.ingredients.filter(i => ingredientStatus(i).key !== "good").length };
   $("#app").innerHTML =
     '<nav class="sidebar" aria-label="Modules">' +
       '<div class="brand"><div class="brand-mark">B</div><span class="brand-text">Bakery<br>Business OS</span></div>' +
@@ -1562,7 +1578,7 @@ VIEWS.inventory = function () {
   const grid = "1.5fr .9fr 1fr 1.3fr 40px";
   const low = lowStock();
   const rows = db.ingredients.slice().sort((a, b) => {
-    const rank = { expired: 0, expiring: 1, out: 2, low: 3, good: 4 };
+    const rank = { expired: 0, expiring: 1, out: 2, soon: 3, low: 4, good: 5 };
     return rank[ingredientStatus(a).key] - rank[ingredientStatus(b).key];
   });
 
@@ -1612,9 +1628,10 @@ VIEWS.inventory = function () {
             '<div class="row between" style="padding:5px 0;font-size:14px"><span>' + esc(i.name) + '</span>' +
             '<span class="muted">' + esc(num(i.stock)) + " / " + esc(num(i.reorder)) + ' ' + esc(i.unit) + '</span></div>').join("") + '</div>' : "") +
           '<button class="btn ghost block" data-act="printShoppingList">Print shopping list</button>') +
-        card("Expiring within 14 days",
+        card("Expiring within " + EXPIRY_SOON + " days",
           expiringSoon().length ? expiringSoon().map(i =>
-            '<div class="alert red" style="margin-bottom:8px"><span class="dot"></span>' + esc(i.name) + ' · ' + fmtDate(i.expiry) + '</div>').join("")
+            '<div class="alert ' + (expiryIsCritical(i) ? "red" : "amber") + '" style="margin-bottom:8px"><span class="dot"></span>' +
+            esc(i.name) + ' · ' + fmtDate(i.expiry) + '</div>').join("")
             : '<div class="alert green"><span class="dot"></span>Nothing expiring soon.</div>') +
       '</div>' +
     '</div>';
