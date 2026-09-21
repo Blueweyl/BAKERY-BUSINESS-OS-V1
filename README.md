@@ -78,6 +78,12 @@ Moving an order to **Paid** records whatever is still owed as cash taken
 today, so it always asks first and names the exact amount — whether you use
 the button, the status list, the stage arrow or drag a card across the board.
 
+Ingredient costs are edited in Inventory — name, unit, stock, reorder level,
+cost per unit and expiry. Saving a new cost reprices every recipe that uses it
+and every product's suggested price straight away; the dialog lists which
+products move and by how much before you commit. Orders already booked or paid
+keep the cost they were committed at, so past profit never moves.
+
 Ingredient warnings are tiered so red keeps its meaning: **red** for anything
 already expired, going off within three days, or out of stock; **amber** for a
 use-by within a fortnight or stock at or below its reorder point. Butter due in

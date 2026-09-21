@@ -1444,6 +1444,8 @@ VIEWS.products = function () {
     '</section>' +
 
     '<div class="formula mb">price = (ingredients + labour + overhead) &divide; (1 &minus; margin %)</div>' +
+    '<p class="hint" style="margin:-10px 0 20px">Update ingredient prices in Inventory. Product costs and suggested prices '
+      + 'recalculate automatically. Open any product to see the full breakdown, ingredient by ingredient.</p>' +
 
     '<section class="card mb"><div class="card-title">Products</div><div class="table-wrap">' +
       '<div class="thead" style="grid-template-columns:' + grid + '"><span>Product</span><span>Unit cost</span><span>Price</span><span>Profit</span><span>Sold</span><span></span></div>' +
@@ -1514,33 +1516,120 @@ function readRecipeRaw(el) {
 
 function recipeEditor(lines) {
   const opts = db.ingredients.map(i => ({ value: i.id, label: i.name + " (" + i.unit + ")" }));
+  const cols = "1.5fr .6fr .7fr .7fr 34px";
   const row = (line, idx) => {
     const i = byId(db.ingredients, line.ingredientId);
-    return '<div class="recipe-row" style="display:grid;grid-template-columns:1.7fr .7fr auto auto;gap:8px;align-items:center;margin-bottom:8px">' +
-      '<select data-r-ing>' + opts.map(o => '<option value="' + esc(o.value) + '"' +
+    return '<div class="recipe-row" style="display:grid;grid-template-columns:' + cols + ';gap:8px;align-items:center;margin-bottom:8px">' +
+      '<select data-r-ing aria-label="Ingredient">' + opts.map(o => '<option value="' + esc(o.value) + '"' +
         (o.value === line.ingredientId ? " selected" : "") + '>' + esc(o.label) + '</option>').join("") + '</select>' +
-      '<input type="number" min="0" step="0.01" data-r-qty value="' + esc(line.qty) + '">' +
-      '<span class="hint num" style="min-width:56px;text-align:right">' +
-        (i ? money(num(line.qty) * num(i.cost)) : "—") + '</span>' +
-      '<button class="icon-btn" data-act="removeRecipeLine" data-index="' + idx + '">&#10005;</button>' +
+      '<input type="number" min="0" step="0.01" data-r-qty value="' + esc(line.qty) + '" aria-label="Quantity">' +
+      '<span class="hint num" style="text-align:right">' + (i ? money(num(i.cost)) : "—") + '</span>' +
+      '<span class="strong num" style="text-align:right">' + (i ? money(num(line.qty) * num(i.cost)) : "—") + '</span>' +
+      '<button class="icon-btn" data-act="removeRecipeLine" data-index="' + idx + '" aria-label="Remove ingredient">&#10005;</button>' +
     '</div>';
   };
+  const total = sum(lines, l => {
+    const i = byId(db.ingredients, l.ingredientId);
+    return i ? num(l.qty) * num(i.cost) : 0;
+  });
   return '<div style="margin:16px 0">' +
     '<div class="row between" style="margin-bottom:8px">' +
       '<span class="strong" style="font-size:14px">Recipe — one batch</span>' +
       '<button class="btn ghost sm" data-act="addRecipeLine">+ Ingredient</button>' +
     '</div>' +
-    (lines.length ? lines.map(row).join("")
+    (lines.length
+      ? '<div class="hint" style="display:grid;grid-template-columns:' + cols + ';gap:8px;margin-bottom:6px">' +
+          '<span>Ingredient</span><span>Qty</span><span style="text-align:right">Cost/unit</span>' +
+          '<span style="text-align:right">Line cost</span><span></span></div>' +
+        lines.map(row).join("") +
+        '<div class="row between" style="border-top:1px solid var(--line);padding-top:8px;margin-top:2px">' +
+          '<span class="hint">Ingredient cost, one batch</span>' +
+          '<span class="strong num">' + money(total) + '</span></div>'
       : '<p class="hint" style="margin:0 0 8px">No recipe yet. Add ingredients and the cost is priced from your inventory automatically.</p>') +
   '</div>';
 }
 
+/** The pricing ladder, spelled out line by line: what the product costs to
+    make, the margin applied, and what that means for price and profit. */
+function pricingBreakdown(p) {
+  const c = costing(p);
+  const line = (label, value, opts) => {
+    const o = opts || {};
+    return '<div class="row between" style="padding:5px 0' + (o.rule ? ";border-top:1px solid var(--line);margin-top:4px;padding-top:8px" : "") + '">' +
+      '<span' + (o.strong ? ' class="strong"' : ' class="muted"') + '>' + label + '</span>' +
+      '<span class="num' + (o.strong ? ' strong' : '') + '"' + (o.color ? ' style="color:' + o.color + '"' : "") + '>' + value + '</span></div>';
+  };
+  return '<div class="card" style="padding:14px;margin-top:4px">' +
+    '<div class="card-title" style="margin-bottom:6px;font-size:14px">How this price is worked out</div>' +
+    line("Ingredients" + (c.fromRecipe ? " (from recipe)" : ""), money(c.ing)) +
+    line("Labour", money(num(p.labour))) +
+    line("Overhead", money(num(p.overhead))) +
+    line("= Total cost", money(c.cost), { strong: true, rule: true }) +
+    line("Margin", clamp(num(p.margin), 0, 95) + "%") +
+    line("&rarr; Suggested price", money(c.price), { strong: true, rule: true, color: "var(--accent)" }) +
+    line("&rarr; Profit", money(c.profit), { strong: true, color: "var(--green)" }) +
+    '<p class="hint" style="margin:10px 0 0">price = total cost &divide; (1 &minus; margin %). ' +
+      'Update ingredient prices in Inventory — product costs and suggested prices recalculate automatically.</p>' +
+  '</div>';
+}
+
 let currentProductId = null;
+const UNITS = ["kg", "g", "L", "ml", "units"];
+
+/** Edit an ingredient, including what it costs. The cost is the number every
+    recipe is priced from, so the dialog shows which products move with it and
+    is explicit that committed orders keep the cost they were booked at. */
+function openIngredientModal(id) {
+  const i = byId(db.ingredients, id);
+  if (!i) return;
+  const users = db.products.filter(p => (p.recipe || []).some(l => l.ingredientId === id) && !p.archived);
+  modal("Edit ingredient", i.name,
+    '<div data-form="editIngredient">' +
+      '<div class="form-grid" style="grid-template-columns:1.6fr .9fr">' +
+        field("Ingredient", '<input data-f="name" value="' + esc(i.name) + '">') +
+        field("Unit", '<select data-f="unit">' + UNITS.map(u =>
+          '<option' + (u === i.unit ? " selected" : "") + '>' + u + '</option>').join("") + '</select>') +
+      '</div>' +
+      '<div class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1.2fr">' +
+        field("In stock", '<input type="number" min="0" step="0.01" data-f="stock" value="' + esc(num(i.stock)) + '">') +
+        field("Reorder at", '<input type="number" min="0" step="0.01" data-f="reorder" value="' + esc(num(i.reorder)) + '">') +
+        field("Cost per unit " + cur(), '<input type="number" min="0" step="0.01" data-f="cost" value="' + esc(num(i.cost)) + '">') +
+        field("Expiry", '<input type="date" data-f="expiry" value="' + esc(i.expiry || "") + '">') +
+      '</div>' +
+      '<div class="alert amber" style="margin-top:4px"><span class="dot"></span><span>' +
+        'Changing ingredient cost updates current and future product pricing. ' +
+        'Past committed orders keep their original cost.</span></div>' +
+      (users.length
+        ? '<div style="margin-top:14px">' +
+            '<div class="strong" style="font-size:14px;margin-bottom:8px">Priced from this ingredient today</div>' +
+            '<div class="table-wrap">' +
+              '<div class="thead" style="grid-template-columns:1.6fr .8fr .8fr .8fr"><span>Product</span>' +
+                '<span style="text-align:right">Uses</span><span style="text-align:right">Unit cost</span>' +
+                '<span style="text-align:right">Price</span></div>' +
+              users.map(p => {
+                const line = (p.recipe || []).find(l => l.ingredientId === id) || {};
+                const c = costing(p);
+                return '<div class="trow" style="grid-template-columns:1.6fr .8fr .8fr .8fr">' +
+                  '<span class="strong">' + esc(p.name) + '</span>' +
+                  '<span class="muted num" style="text-align:right">' + esc(num(line.qty)) + ' ' + esc(i.unit) + '</span>' +
+                  '<span class="muted num" style="text-align:right">' + money(c.cost) + '</span>' +
+                  '<span class="strong num" style="text-align:right">' + money(c.price) + '</span>' +
+                '</div>';
+              }).join("") +
+            '</div>' +
+            '<p class="hint" style="margin:10px 0 0">These recalculate the moment you save. ' +
+              'Orders already booked or paid keep the cost frozen at the time they were committed.</p>' +
+          '</div>'
+        : '<p class="hint" style="margin:14px 0 0">No recipe uses this ingredient yet.</p>') +
+    '</div>',
+    [{ label: "Cancel", act: "closeModal" },
+     { label: "Save", act: "saveIngredient", cls: "primary", data: ' data-id="' + i.id + '"' }]);
+}
+
 function openProductModal(id, draft) {
   const p = productById(id);
   if (!p) return;
   currentProductId = id;
-  const c = costing(p);
   const d = draft || {};
   const lines = d.recipe || (p.recipe || []).slice();
   const val = (k, fallback) => esc(d[k] !== undefined ? d[k] : fallback);
@@ -1565,8 +1654,7 @@ function openProductModal(id, draft) {
       '<div class="row" style="margin:14px 0"><span class="hint">Allergens:</span>' +
         ALLERGENS.map(a => '<label class="checkbox"><input type="checkbox" data-f="' + esc(a) + '" data-group="allergens"' +
           (checked(a) ? " checked" : "") + '>' + esc(a) + '</label>').join("") + '</div>' +
-      '<div class="alert green" style="justify-content:space-between">' +
-        '<span>Current: cost ' + money(c.cost) + ' · price ' + money(c.price) + ' · profit ' + money(c.profit) + '</span></div>' +
+      pricingBreakdown(p) +
     '</div>',
     [{ label: "Cancel", act: "closeModal" }, { label: "Save", act: "saveProduct", cls: "primary", data: ' data-id="' + p.id + '"' }]);
 }
@@ -1575,7 +1663,7 @@ function openProductModal(id, draft) {
    Module: Inventory
    ============================================================ */
 VIEWS.inventory = function () {
-  const grid = "1.5fr .9fr 1fr 1.3fr 40px";
+  const grid = "1.5fr .9fr 1fr 1.3fr 96px";
   const low = lowStock();
   const rows = db.ingredients.slice().sort((a, b) => {
     const rank = { expired: 0, expiring: 1, out: 2, soon: 3, low: 4, good: 5 };
@@ -1594,6 +1682,9 @@ VIEWS.inventory = function () {
         field("Expiry", '<input type="date" data-f="expiry">') +
         '<button class="btn" data-act="addIngredient" data-submit>Add</button>' +
       '</div>' +
+      '<p class="hint" style="margin:12px 0 0">Costs entered here price every recipe. ' +
+        'Edit an ingredient to change its price — product costs and suggested prices recalculate automatically, ' +
+        'while orders already booked or paid keep the cost they were committed at.</p>' +
     '</section>' +
 
     '<div class="grid wide-narrow">' +
@@ -1612,7 +1703,9 @@ VIEWS.inventory = function () {
             '<span>' + pill(s.label, s.tone) +
               (["low", "out"].includes(s.key) ? '<div class="hint" style="color:var(--amber);margin-top:3px">Reorder ' +
                 Math.max(1, Math.ceil(num(i.reorder) * 2 - num(i.stock))) + ' ' + esc(i.unit) + '</div>' : "") + '</span>' +
-            '<span>' + delBtn("deleteIngredient", i.id, "Delete ingredient") + '</span>' +
+            '<span class="row" style="gap:2px;flex-wrap:nowrap">' +
+              '<button class="btn ghost sm" data-act="editIngredient" data-id="' + i.id + '">Edit</button>' +
+              delBtn("deleteIngredient", i.id, "Delete ingredient") + '</span>' +
           '</div>';
         }).join("") : emptyRow("No ingredients tracked yet.")) +
       '</div></section>' +
@@ -2386,6 +2479,30 @@ const ACTIONS = {
       const step = ["g", "ml", "units"].includes(i.unit) ? 1 : 0.5;
       i.stock = Math.max(0, +(num(i.stock) + num(d.by) * step).toFixed(2));
     });
+  },
+  editIngredient: d => openIngredientModal(d.id),
+  saveIngredient(d, el) {
+    const f = readForm(el);
+    const i = byId(db.ingredients, d.id);
+    if (!i) return;
+    if (!f.name || !f.name.trim()) return toast("Name the ingredient.");
+    if (sameName(db.ingredients, f.name, d.id)) return toast("Another ingredient already has that name.");
+    const before = round2(num(i.cost));
+    commit(() => Object.assign(i, {
+      name: f.name.trim(),
+      unit: UNITS.includes(f.unit) ? f.unit : i.unit,
+      stock: round2(Math.max(0, num(f.stock))),
+      reorder: round2(Math.max(0, num(f.reorder))),
+      cost: round2(Math.max(0, num(f.cost))),
+      expiry: f.expiry || ""
+    }));
+    closeModal();
+    // Recipes read the live cost, so every product repriced the moment that
+    // assignment landed. Say so, because the change is invisible otherwise.
+    const after = round2(num(i.cost));
+    toast(after === before
+      ? "Ingredient saved."
+      : "Saved — " + money(before) + " to " + money(after) + " per " + i.unit + ". Product prices updated.");
   },
   deleteIngredient(d) {
     const i = byId(db.ingredients, d.id);
