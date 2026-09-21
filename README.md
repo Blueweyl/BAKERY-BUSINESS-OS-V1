@@ -13,7 +13,7 @@ Nine modules, all sharing one set of records:
 | **Order calendar** | Every order laid out by day, colour-coded by stage, month by month |
 | **Enquiries & orders** | Enquiry → quoted → booked → paid, as a drag-and-drop board plus a searchable table |
 | **Customers** | Contact details, notes, order history and lifetime spend, calculated automatically |
-| **Products & costing** | Recipe costing, the pricing formula, profit per unit and the allergen matrix |
+| **Products & costing** | A recipe editor priced from live inventory, the pricing formula, profit per unit and the allergen matrix |
 | **Inventory** | Stock levels, reorder points, expiry warnings, stock value and a shopping list |
 | **Payments & P&L** | Received, outstanding and expected money, expenses, and 12 months of profit |
 | **Tasks & bake log** | To-dos, what came out of the oven, waste tracking and a social planner |
@@ -33,6 +33,16 @@ another computer.
 
 Set a margin per product and the app works backwards to the price, so the margin
 you ask for is the margin you actually get.
+
+Give a product a recipe — ingredients and quantities per batch — and the
+ingredient figure is priced from what those ingredients actually cost in
+Inventory. Raise the price of butter and every cake that uses it reprices
+itself. Products without a recipe keep a flat ingredients figure instead.
+
+Logging a bake in **Tasks & bake log** deducts that recipe from stock. If
+there isn't enough of something, it names the shortfall and asks before
+taking stock to zero. A printed bake sheet rolls the day's orders up into a
+single "ingredients needed" list, flagging anything you're short of.
 
 ## How the data works
 

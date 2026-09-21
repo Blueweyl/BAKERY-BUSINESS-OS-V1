@@ -292,16 +292,41 @@ function seed() {
   const t = todayISO();
   const ing = (name, unit, stock, reorder, cost, expiry) =>
     ({ id: uid(), name, unit, stock, reorder, cost, expiry });
-  const prod = (name, ingCost, labour, overhead, margin, allergens, category) =>
-    ({ id: uid(), name, ingCost, labour, overhead, margin, allergens, category });
+  const ingredients = [
+    ing("Cake flour", "kg", 8, 4, 2.4, shiftDays(180)),
+    ing("Unsalted butter", "kg", 2.4, 3, 9.5, shiftDays(26)),
+    ing("Free-range eggs", "units", 6, 24, 0.42, shiftDays(11)),
+    ing("Caster sugar", "kg", 5.5, 3, 1.9, shiftDays(300)),
+    ing("Vanilla extract", "ml", 90, 150, 0.12, shiftDays(400)),
+    ing("Cream cheese", "kg", 1.1, 1.5, 11.2, shiftDays(5)),
+    ing("Cocoa powder", "kg", 1.8, 1, 14.0, shiftDays(220)),
+    ing("Ground almonds", "kg", 0.9, 1, 16.5, shiftDays(60))
+  ];
+  const iId = n => ingredients.find(i => i.name === n).id;
+  /** recipe: what one batch consumes, in each ingredient's own unit. */
+  const recipe = pairs => pairs.map(([name, qty]) => ({ ingredientId: iId(name), qty }));
+  const prod = (name, recipeLines, labour, overhead, margin, allergens, category) =>
+    ({ id: uid(), name, recipe: recipe(recipeLines), ingCost: 0, labour, overhead, margin, allergens, category });
 
   const products = [
-    prod("Classic Vanilla Cake", 14.2, 18, 4.1, 45, ["Gluten", "Egg", "Dairy"], "Custom cakes"),
-    prod("Choc Fudge Cake", 17.5, 20, 4.4, 45, ["Gluten", "Egg", "Dairy", "Nuts"], "Custom cakes"),
-    prod("Red Velvet Cake", 16.0, 19, 4.2, 45, ["Gluten", "Egg", "Dairy"], "Custom cakes"),
-    prod("Lemon Drizzle Loaf", 7.4, 9, 2.2, 50, ["Gluten", "Egg"], "Market stall"),
-    prod("Cupcakes (box of 12)", 9.8, 12, 3.0, 48, ["Gluten", "Egg", "Dairy"], "Cupcake orders"),
-    prod("Macarons (box of 12)", 11.2, 16, 3.4, 52, ["Egg", "Dairy", "Nuts"], "Market stall")
+    prod("Classic Vanilla Cake",
+      [["Cake flour", 0.9], ["Unsalted butter", 0.45], ["Free-range eggs", 8], ["Caster sugar", 0.6], ["Vanilla extract", 30]],
+      18, 4.1, 45, ["Gluten", "Egg", "Dairy"], "Custom cakes"),
+    prod("Choc Fudge Cake",
+      [["Cake flour", 0.8], ["Unsalted butter", 0.5], ["Free-range eggs", 8], ["Caster sugar", 0.7], ["Cocoa powder", 0.25], ["Ground almonds", 0.1]],
+      20, 4.4, 45, ["Gluten", "Egg", "Dairy", "Nuts"], "Custom cakes"),
+    prod("Red Velvet Cake",
+      [["Cake flour", 0.85], ["Unsalted butter", 0.4], ["Free-range eggs", 6], ["Caster sugar", 0.65], ["Cocoa powder", 0.06], ["Cream cheese", 0.4]],
+      19, 4.2, 45, ["Gluten", "Egg", "Dairy"], "Custom cakes"),
+    prod("Lemon Drizzle Loaf",
+      [["Cake flour", 0.4], ["Unsalted butter", 0.25], ["Free-range eggs", 4], ["Caster sugar", 0.35]],
+      9, 2.2, 50, ["Gluten", "Egg"], "Market stall"),
+    prod("Cupcakes (box of 12)",
+      [["Cake flour", 0.45], ["Unsalted butter", 0.3], ["Free-range eggs", 5], ["Caster sugar", 0.4], ["Vanilla extract", 15]],
+      12, 3.0, 48, ["Gluten", "Egg", "Dairy"], "Cupcake orders"),
+    prod("Macarons (box of 12)",
+      [["Ground almonds", 0.25], ["Caster sugar", 0.3], ["Free-range eggs", 5], ["Unsalted butter", 0.15]],
+      16, 3.4, 52, ["Egg", "Dairy", "Nuts"], "Market stall")
   ];
   const customers = [
     { id: uid(), name: "Maria Torres", email: "maria.torres@example.com", phone: "555-0142", notes: "Prefers buttercream, no fondant." },
@@ -325,17 +350,7 @@ function seed() {
       monthlyGoal: 5000, defaultMargin: 45, depositPct: 33, quoteValidDays: 14,
       terms: "Deposit secures your date. Balance due on collection or delivery."
     },
-    customers, products,
-    ingredients: [
-      ing("Cake flour", "kg", 8, 4, 2.4, shiftDays(180)),
-      ing("Unsalted butter", "kg", 2.4, 3, 9.5, shiftDays(26)),
-      ing("Free-range eggs", "units", 6, 24, 0.42, shiftDays(11)),
-      ing("Caster sugar", "kg", 5.5, 3, 1.9, shiftDays(300)),
-      ing("Vanilla extract", "ml", 90, 150, 0.12, shiftDays(400)),
-      ing("Cream cheese", "kg", 1.1, 1.5, 11.2, shiftDays(5)),
-      ing("Cocoa powder", "kg", 1.8, 1, 14.0, shiftDays(220)),
-      ing("Ground almonds", "kg", 0.9, 1, 16.5, shiftDays(60))
-    ],
+    customers, products, ingredients,
     orders: [
       order("Maria Torres", "Classic Vanilla Cake", 1, shiftDays(3), "booked", 180, 60, "Birthday — 'Happy 40th Maria', pickup 3pm."),
       order("James Reyes", "Cupcakes (box of 12)", 4, shiftDays(5), "quoted", 95, 0, "Office party, delivery 5pm."),
@@ -470,17 +485,36 @@ function money(n, opts) {
 const money0 = n => cur() + Math.round(Number(n) || 0).toLocaleString();
 
 /* ---------- derived business logic ---------- */
+const byId = (list, id) => (list || []).find(x => x.id === id);
 const customerById = id => db.customers.find(c => c.id === id);
 const productById = id => db.products.find(p => p.id === id);
 const customerName = id => (customerById(id) || {}).name || "—";
 const productName = id => (productById(id) || {}).name || "—";
 
+/** What one batch of a product's recipe costs, priced from live
+    inventory. Products without a recipe keep their flat figure. */
+function recipeCost(p) {
+  if (!p.recipe || !p.recipe.length) return null;
+  return sum(p.recipe, line => {
+    const i = byId(db.ingredients, line.ingredientId);
+    return i ? num(line.qty) * num(i.cost) : 0;
+  });
+}
+/** Ingredients that one batch consumes, resolved against inventory. */
+function recipeLines(p) {
+  return (p.recipe || []).map(line => ({
+    line, ingredient: byId(db.ingredients, line.ingredientId), qty: num(line.qty)
+  })).filter(r => r.ingredient);
+}
 /** Unit cost and suggested price for a product, from the pricing formula. */
 function costing(p) {
-  const cost = num(p.ingCost) + num(p.labour) + num(p.overhead);
+  const fromRecipe = recipeCost(p);
+  const ing = fromRecipe === null ? num(p.ingCost) : fromRecipe;
+  const cost = ing + num(p.labour) + num(p.overhead);
   const margin = clamp(num(p.margin), 0, 95);
   const price = cost / (1 - margin / 100);
-  return { cost, price, profit: price - cost, marginPct: price > 0 ? ((price - cost) / price) * 100 : 0 };
+  return { cost, ing, price, profit: price - cost, fromRecipe: fromRecipe !== null,
+    marginPct: price > 0 ? ((price - cost) / price) * 100 : 0 };
 }
 
 const orderBalance = o => Math.max(0, num(o.total) - num(o.deposit));
@@ -983,7 +1017,7 @@ function openOrderModal(id) {
     '</div>',
     [{ label: "Delete", act: "deleteOrder", cls: "danger", data: ' data-id="' + o.id + '"' },
      { label: "Cancel", act: "closeModal" },
-     { label: "Save changes", act: "saveOrder", cls: "", data: ' data-id="' + o.id + '"' }]);
+     { label: "Save changes", act: "saveOrder", cls: "primary", data: ' data-id="' + o.id + '"' }]);
 }
 
 /* ============================================================
@@ -1051,7 +1085,7 @@ function openCustomerModal(id) {
       '</div>' +
       field("Notes", '<textarea data-f="notes" rows="3" placeholder="Allergies, preferences, delivery quirks…">' + esc(c.notes || "") + '</textarea>') +
     '</div>',
-    [{ label: "Cancel", act: "closeModal" }, { label: "Save", act: "saveCustomer", cls: "", data: ' data-id="' + c.id + '"' }]);
+    [{ label: "Cancel", act: "closeModal" }, { label: "Save", act: "saveCustomer", cls: "primary", data: ' data-id="' + c.id + '"' }]);
 }
 </script>
 <script>
@@ -1092,7 +1126,8 @@ VIEWS.products = function () {
         const c = costing(p);
         return '<div class="trow" style="grid-template-columns:' + grid + '">' +
           '<span><span class="strong">' + esc(p.name) + '</span>' + (p.category ? '<br><span class="hint">' + esc(p.category) + '</span>' : "") + '</span>' +
-          '<span class="muted num">' + money(c.cost) + '</span>' +
+          '<span class="muted num">' + money(c.cost) +
+            (c.fromRecipe ? '<br><span class="hint">' + (p.recipe || []).length + ' ingredients</span>' : "") + '</span>' +
           '<span class="strong num">' + money(c.price) + '</span>' +
           '<span class="strong num" style="color:var(--green)">' + money(c.profit) + ' <span class="hint">(' + Math.round(c.marginPct) + '%)</span></span>' +
           '<span class="muted num">' + sold(p.id) + '</span>' +
@@ -1129,27 +1164,82 @@ VIEWS.products = function () {
     '</div>';
 };
 
-function openProductModal(id) {
+/** Rows of the recipe editor, read straight back out of the dialog. */
+function readRecipe(el) {
+  const form = formOf(el);
+  if (!form) return [];
+  return [...form.querySelectorAll(".recipe-row")].map(row => ({
+    ingredientId: row.querySelector("[data-r-ing]").value,
+    qty: num(row.querySelector("[data-r-qty]").value)
+  })).filter(r => r.ingredientId && r.qty > 0);
+}
+
+function readRecipeRaw(el) {
+  const form = formOf(el);
+  if (!form) return [];
+  return [...form.querySelectorAll(".recipe-row")].map(row => ({
+    ingredientId: row.querySelector("[data-r-ing]").value,
+    qty: num(row.querySelector("[data-r-qty]").value)
+  }));
+}
+
+function recipeEditor(lines) {
+  const opts = db.ingredients.map(i => ({ value: i.id, label: i.name + " (" + i.unit + ")" }));
+  const row = (line, idx) => {
+    const i = byId(db.ingredients, line.ingredientId);
+    return '<div class="recipe-row" style="display:grid;grid-template-columns:1.7fr .7fr auto auto;gap:8px;align-items:center;margin-bottom:8px">' +
+      '<select data-r-ing>' + opts.map(o => '<option value="' + esc(o.value) + '"' +
+        (o.value === line.ingredientId ? " selected" : "") + '>' + esc(o.label) + '</option>').join("") + '</select>' +
+      '<input type="number" min="0" step="0.01" data-r-qty value="' + esc(line.qty) + '">' +
+      '<span class="hint num" style="min-width:56px;text-align:right">' +
+        (i ? money(num(line.qty) * num(i.cost)) : "—") + '</span>' +
+      '<button class="icon-btn" data-act="removeRecipeLine" data-index="' + idx + '">&#10005;</button>' +
+    '</div>';
+  };
+  return '<div style="margin:16px 0">' +
+    '<div class="row between" style="margin-bottom:8px">' +
+      '<span class="strong" style="font-size:14px">Recipe — one batch</span>' +
+      '<button class="btn ghost sm" data-act="addRecipeLine">+ Ingredient</button>' +
+    '</div>' +
+    (lines.length ? lines.map(row).join("")
+      : '<p class="hint" style="margin:0 0 8px">No recipe yet. Add ingredients and the cost is priced from your inventory automatically.</p>') +
+  '</div>';
+}
+
+let currentProductId = null;
+function openProductModal(id, draft) {
   const p = productById(id);
   if (!p) return;
+  currentProductId = id;
   const c = costing(p);
+  const d = draft || {};
+  const lines = d.recipe || (p.recipe || []).slice();
+  const val = (k, fallback) => esc(d[k] !== undefined ? d[k] : fallback);
+  const checked = a => (d.allergens ? d.allergens.includes(a) : (p.allergens || []).includes(a));
   modal("Edit product", p.name,
     '<div data-form="editProduct">' +
       '<div class="form-grid" style="grid-template-columns:1fr 1fr">' +
-        field("Name", '<input data-f="name" value="' + esc(p.name) + '">') +
-        field("Category", '<input data-f="category" value="' + esc(p.category || "") + '">') +
-        field("Ingredients " + cur(), '<input type="number" min="0" step="0.01" data-f="ingCost" value="' + esc(p.ingCost) + '">') +
-        field("Labour " + cur(), '<input type="number" min="0" step="0.01" data-f="labour" value="' + esc(p.labour) + '">') +
-        field("Overhead " + cur(), '<input type="number" min="0" step="0.01" data-f="overhead" value="' + esc(p.overhead) + '">') +
-        field("Margin %", '<input type="number" min="0" max="95" step="1" data-f="margin" value="' + esc(p.margin) + '">') +
+        field("Name", '<input data-f="name" value="' + val("name", p.name) + '">') +
+        field("Category", '<input data-f="category" value="' + val("category", p.category || "") + '">') +
+        field("Labour " + cur(), '<input type="number" min="0" step="0.01" data-f="labour" value="' + val("labour", p.labour) + '">') +
+        field("Overhead " + cur(), '<input type="number" min="0" step="0.01" data-f="overhead" value="' + val("overhead", p.overhead) + '">') +
+        field("Margin %", '<input type="number" min="0" max="95" step="1" data-f="margin" value="' + val("margin", p.margin) + '">') +
+        field(lines.length ? "Ingredients " + cur() + " (from recipe)" : "Ingredients " + cur(),
+          lines.length
+            ? '<input value="' + esc(money(sum(lines, l => {
+                const i = byId(db.ingredients, l.ingredientId);
+                return i ? num(l.qty) * num(i.cost) : 0;
+              }))) + '" disabled>'
+            : '<input type="number" min="0" step="0.01" data-f="ingCost" value="' + val("ingCost", p.ingCost) + '">') +
       '</div>' +
+      recipeEditor(lines) +
       '<div class="row" style="margin:14px 0"><span class="hint">Allergens:</span>' +
         ALLERGENS.map(a => '<label class="checkbox"><input type="checkbox" data-f="' + esc(a) + '" data-group="allergens"' +
-          ((p.allergens || []).includes(a) ? " checked" : "") + '>' + esc(a) + '</label>').join("") + '</div>' +
+          (checked(a) ? " checked" : "") + '>' + esc(a) + '</label>').join("") + '</div>' +
       '<div class="alert green" style="justify-content:space-between">' +
         '<span>Current: cost ' + money(c.cost) + ' · price ' + money(c.price) + ' · profit ' + money(c.profit) + '</span></div>' +
     '</div>',
-    [{ label: "Cancel", act: "closeModal" }, { label: "Save", act: "saveProduct", cls: "", data: ' data-id="' + p.id + '"' }]);
+    [{ label: "Cancel", act: "closeModal" }, { label: "Save", act: "saveProduct", cls: "primary", data: ' data-id="' + p.id + '"' }]);
 }
 
 /* ============================================================
@@ -1338,7 +1428,8 @@ VIEWS.kitchen = function () {
           field("Batches", input("qty", 'type="number" min="1" step="1" value="1" data-default="1"')) +
           '<button class="btn" data-act="addBake" data-submit>Log bake</button>' +
         '</div>' +
-        '<p class="hint" style="margin:0 0 14px">Logging a bake records what came out of the oven and when.</p>' +
+        '<p class="hint" style="margin:0 0 14px">Logging a bake records what came out of the oven ' +
+          'and deducts its recipe from inventory.</p>' +
         (db.bakes.length ? db.bakes.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12).map(b =>
           '<div class="row between" style="padding:9px 0;border-bottom:1px solid var(--line)">' +
             '<span style="font-size:14px">' + esc(productName(b.productId)) + (num(b.qty) > 1 ? ' ×' + b.qty : "") + '</span>' +
@@ -1520,11 +1611,28 @@ function bakeSheetDoc(dateISO) {
       '</td><td class="r">' + (num(o.qty) || 1) + '</td><td>' + esc(customerName(o.customerId)) + '</td>' +
       '<td>' + esc(o.notes || "—") + '</td></tr>';
   }).join("");
-  // Ingredients needed, rolled up from each product's recipe cost line.
+  // Everything the day's orders consume, rolled up across their recipes.
+  const needed = {};
+  for (const o of list) {
+    const p = productById(o.productId);
+    if (!p) continue;
+    for (const r of recipeLines(p)) {
+      const key = r.ingredient.id;
+      needed[key] = needed[key] || { name: r.ingredient.name, unit: r.ingredient.unit, qty: 0, stock: num(r.ingredient.stock) };
+      needed[key].qty += r.qty * (num(o.qty) || 1);
+    }
+  }
+  const mise = Object.values(needed).sort((a, b) => a.name.localeCompare(b.name));
+
   return '<div class="doc">' + docHead("Kitchen bake sheet", fmtLongDate(dateISO), [list.length + " order" + (list.length === 1 ? "" : "s"), "Printed " + fmtLongDate(todayISO())]) +
     (list.length
       ? '<table><thead><tr><th>Product</th><th class="r">Qty</th><th>Customer</th><th>Notes</th></tr></thead><tbody>' + rows + '</tbody></table>'
       : '<p class="muted">No orders scheduled for this day.</p>') +
+    (mise.length ? '<h3 style="margin-top:26px;font-size:15px">Ingredients needed</h3>' +
+      '<table><thead><tr><th>Ingredient</th><th class="r">Needed</th><th class="r">In stock</th></tr></thead><tbody>' +
+      mise.map(m => '<tr><td>' + esc(m.name) + '</td><td class="r"><strong>' + (+m.qty.toFixed(2)) + " " + esc(m.unit) +
+        '</strong></td><td class="r"' + (m.stock < m.qty ? ' style="color:#C0483F;font-weight:700"' : "") + '>' +
+        m.stock + " " + esc(m.unit) + '</td></tr>').join("") + '</tbody></table>' : "") +
     '<div class="doc-note">Tick each item as it leaves the oven. Allergens are listed under every product — double-check before decorating.</div></div>';
 }
 
@@ -1606,6 +1714,13 @@ function sheets() {
       db.products.map(p => { const c = costing(p);
         return [p.name, p.category || "", num(p.ingCost), num(p.labour), num(p.overhead), +c.cost.toFixed(2),
           num(p.margin), +c.price.toFixed(2), +c.profit.toFixed(2), (p.allergens || []).join(", ")]; })],
+    ["Recipes", ["Product", "Ingredient", "Qty", "Unit", "Cost per unit", "Line cost"],
+      db.products.flatMap(p => recipeLines(p).map(r =>
+        [p.name, r.ingredient.name, r.qty, r.ingredient.unit, num(r.ingredient.cost), +(r.qty * num(r.ingredient.cost)).toFixed(2)]))],
+    ["Shopping list", ["Ingredient", "In stock", "Reorder at", "Suggested buy", "Unit", "Estimated cost"],
+      lowStock().map(i => { const buy = Math.max(1, Math.ceil(num(i.reorder) * 2 - num(i.stock)));
+        return [i.name, num(i.stock), num(i.reorder), buy, i.unit, +(buy * num(i.cost)).toFixed(2)]; })],
+    ["Alerts", ["Level", "Detail"], alerts().map(a => [a.level === "critical" ? "Critical" : "Soon", a.text])],
     ["Inventory", ["Ingredient", "Unit", "In stock", "Reorder at", "Cost per unit", "Stock value", "Expiry", "Status"],
       db.ingredients.map(i => [i.name, i.unit, num(i.stock), num(i.reorder), num(i.cost),
         +(num(i.stock) * num(i.cost)).toFixed(2), i.expiry || "", ingredientStatus(i).label])],
@@ -1654,7 +1769,6 @@ function toWorkbook() {
 /* ============================================================
    Actions — every button in the app resolves to one of these.
    ============================================================ */
-const byId = (list, id) => list.find(x => x.id === id);
 const removeById = (list, id) => { const i = list.findIndex(x => x.id === id); if (i > -1) list.splice(i, 1); };
 
 const ACTIONS = {
@@ -1755,13 +1869,29 @@ const ACTIONS = {
     clearForm(el);
   },
   editProduct: d => openProductModal(d.id),
+  /** Re-opens the dialog with what's typed so far, plus one more row. */
+  addRecipeLine(d, el) {
+    const draft = readForm(el);
+    draft.recipe = readRecipe(el).concat([{ ingredientId: (db.ingredients[0] || {}).id || "", qty: 0 }]);
+    if (!db.ingredients.length) return toast("Add an ingredient in Inventory first.");
+    openProductModal(currentProductId, draft);
+  },
+  removeRecipeLine(d, el) {
+    const draft = readForm(el);
+    const lines = readRecipeRaw(el);
+    lines.splice(parseInt(d.index, 10), 1);
+    draft.recipe = lines;
+    openProductModal(currentProductId, draft);
+  },
   saveProduct(d, el) {
     const f = readForm(el);
+    const recipe = readRecipe(el);
     commit(() => {
       const p = productById(d.id);
       if (p) Object.assign(p, {
-        name: f.name || p.name, category: f.category,
-        ingCost: num(f.ingCost), labour: num(f.labour), overhead: num(f.overhead),
+        name: f.name || p.name, category: f.category, recipe,
+        ingCost: recipe.length ? num(p.ingCost) : num(f.ingCost),
+        labour: num(f.labour), overhead: num(f.overhead),
         margin: clamp(num(f.margin), 0, 95), allergens: f.allergens || []
       });
     }, "Product saved.");
@@ -1814,8 +1944,26 @@ const ACTIONS = {
   addBake(d, el) {
     const f = readForm(el);
     if (!f.productId) return toast("Pick a product to log.");
-    commit(() => db.bakes.push({ id: uid(), productId: f.productId, qty: Math.max(1, parseInt(f.qty, 10) || 1), date: todayISO(), notes: "" }), "Bake logged.");
-    clearForm(el);
+    const p = productById(f.productId);
+    const batches = Math.max(1, parseInt(f.qty, 10) || 1);
+    const lines = recipeLines(p);
+    const short = lines.filter(r => num(r.ingredient.stock) < r.qty * batches);
+    const doLog = () => {
+      commit(() => {
+        for (const r of lines) {
+          r.ingredient.stock = Math.max(0, +(num(r.ingredient.stock) - r.qty * batches).toFixed(2));
+        }
+        db.bakes.push({ id: uid(), productId: f.productId, qty: batches, date: todayISO(), notes: "" });
+      }, lines.length ? "Bake logged — " + lines.length + " ingredients deducted." : "Bake logged.");
+      clearForm(el);
+    };
+    if (short.length) {
+      return confirmDo("Not enough stock", short.map(r =>
+        r.ingredient.name + ": need " + +(r.qty * batches).toFixed(2) + " " + r.ingredient.unit +
+        ", have " + num(r.ingredient.stock)).join(" · ") + ". Log the bake anyway and take stock to zero?",
+        "Log anyway", doLog);
+    }
+    doLog();
   },
   deleteBake(d) { commit(() => removeById(db.bakes, d.id)); },
   addWaste(d, el) {
