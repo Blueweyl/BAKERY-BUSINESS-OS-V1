@@ -1,0 +1,1967 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bakery Business OS</title>
+<meta name="description" content="Run your whole bakery from one file. Offline, no login, no subscription.">
+<meta name="theme-color" content="#2D2118">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23C4713A'/%3E%3Ctext x='16' y='23' font-family='sans-serif' font-size='20' font-weight='700' fill='%23FAF7F2' text-anchor='middle'%3EB%3C/text%3E%3C/svg%3E">
+<style>
+/* ---------- design tokens ---------- */
+:root{
+  --ink:#2D2118; --bg:#FAF7F2; --card:#ffffff; --line:#E8DED0; --canvas:#EDE6DA;
+  --accent:#C4713A; --accent-dark:#A85D2E; --green:#3F8A5C; --amber:#C08A1E; --red:#C0483F;
+  --ink-60:rgba(45,33,24,.6); --ink-45:rgba(45,33,24,.45); --ink-75:rgba(45,33,24,.75);
+  --radius:14px; --radius-sm:8px; --shadow:0 1px 2px rgba(45,33,24,.04);
+  --font:"Poppins",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --sidebar:230px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink); font-family:var(--font);
+  font-size:15px; line-height:1.45; -webkit-font-smoothing:antialiased;
+}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
+a{color:var(--accent)}
+h1,h2,h3{margin:0;font-weight:700;letter-spacing:-.01em}
+
+/* ---------- layout ---------- */
+.app{display:flex;min-height:100vh}
+.sidebar{
+  width:var(--sidebar);flex:none;background:var(--ink);display:flex;flex-direction:column;
+  padding:22px 14px;position:sticky;top:0;height:100vh;overflow-y:auto;z-index:40;
+}
+.brand{display:flex;align-items:center;gap:12px;padding:0 10px 22px}
+.brand-mark{width:32px;height:32px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex:none;color:var(--bg);font-weight:700;font-size:16px}
+.brand-text{color:var(--bg);font-weight:600;font-size:15px;letter-spacing:.03em;line-height:1.2}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav-item{
+  display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:9px;cursor:pointer;
+  background:none;border:none;width:100%;text-align:left;font-family:inherit;font-size:14.5px;
+  color:rgba(250,247,242,.62);font-weight:500;transition:background .12s,color .12s;
+}
+.nav-item:hover{background:rgba(250,247,242,.07);color:rgba(250,247,242,.9)}
+.nav-item .label-short{display:none}
+.nav-item .dot{width:8px;height:8px;border-radius:50%;background:rgba(250,247,242,.25);flex:none;transition:background .12s}
+.nav-item[aria-current="page"]{background:rgba(196,113,58,.18);color:#FAF7F2;font-weight:600}
+.nav-item[aria-current="page"] .dot{background:var(--accent)}
+.nav-badge{margin-left:auto;background:var(--red);color:#fff;font-size:11px;font-weight:700;border-radius:20px;padding:1px 7px;min-width:20px;text-align:center}
+.sidebar-foot{color:rgba(250,247,242,.35);font-size:12px;padding:12px 10px}
+.spacer{flex:1}
+
+.main{flex:1;min-width:0;padding:36px 40px 64px;max-width:1440px}
+.page-title{font-size:30px;margin-bottom:4px}
+.page-sub{margin:0 0 26px;color:var(--ink-60);font-size:15px}
+
+/* ---------- cards & grid ---------- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px 24px;box-shadow:var(--shadow)}
+.card.dark{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.card-title{font-weight:600;font-size:16px;margin-bottom:14px}
+.grid{display:grid;gap:18px}
+.grid.kpis{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.grid.two{grid-template-columns:1fr 1fr}
+.grid.wide-narrow{grid-template-columns:1.4fr 1fr}
+.stack{display:flex;flex-direction:column;gap:18px}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.row.between{justify-content:space-between}
+.mb{margin-bottom:20px}
+
+.kpi-label{color:var(--ink-60);font-size:14px;font-weight:500}
+.kpi-value{font-size:32px;font-weight:700;margin-top:6px;line-height:1.1}
+.kpi-sub{font-size:13.5px;font-weight:600;margin-top:4px}
+.kpi-sub.up{color:var(--green)} .kpi-sub.down{color:var(--red)} .kpi-sub.flat{color:var(--ink-45)}
+
+/* ---------- controls ---------- */
+input,select,textarea{
+  border:1px solid var(--line);border-radius:var(--radius-sm);padding:9px 12px;font-size:14px;
+  font-family:inherit;color:var(--ink);background:#fff;width:100%;
+}
+input:focus,select:focus,textarea:focus{outline:2px solid rgba(196,113,58,.35);outline-offset:1px;border-color:var(--accent)}
+label.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink-60);font-weight:500}
+.btn{
+  background:var(--accent);color:#fff;border:1px solid var(--accent);border-radius:var(--radius-sm);
+  padding:9px 18px;font-weight:600;font-size:14px;cursor:pointer;font-family:inherit;white-space:nowrap;
+}
+.btn:hover{background:var(--accent-dark);border-color:var(--accent-dark)}
+.btn.ghost{background:none;color:var(--accent)}
+.btn.ghost:hover{background:rgba(196,113,58,.08);color:var(--accent-dark)}
+.btn.neutral{background:none;color:var(--ink);border-color:var(--line)}
+.btn.neutral:hover{background:var(--bg)}
+.btn.danger{background:none;color:var(--red);border-color:rgba(192,72,63,.4)}
+.btn.danger:hover{background:rgba(192,72,63,.08)}
+.btn.sm{padding:5px 11px;font-size:12.5px}
+.btn.block{width:100%;text-align:center}
+.icon-btn{background:none;border:none;color:var(--red);opacity:.55;cursor:pointer;font-size:14px;padding:4px;line-height:1;font-family:inherit}
+.icon-btn:hover{opacity:1}
+.form-grid{display:grid;gap:10px;align-items:end}
+
+/* ---------- tables ---------- */
+.table-wrap{overflow-x:auto}
+.thead,.trow{display:grid;align-items:center;gap:8px}
+.thead{color:var(--ink-45);font-size:12.5px;font-weight:600;letter-spacing:.03em;padding:0 6px 10px;border-bottom:1px solid var(--line);text-transform:uppercase}
+.trow{padding:13px 6px;border-bottom:1px solid var(--line);font-size:14.5px}
+.trow:last-child{border-bottom:none}
+.trow.clickable{cursor:pointer}
+.trow.clickable:hover{background:var(--bg)}
+.muted{color:var(--ink-60);font-size:14px}
+.strong{font-weight:600}
+.num{font-variant-numeric:tabular-nums}
+.empty{padding:26px 6px;color:var(--ink-45);font-size:14px;text-align:center}
+
+.pill{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:12.5px;padding:4px 11px;border-radius:20px;white-space:nowrap}
+.pill.green{background:rgba(63,138,92,.12);color:var(--green)}
+.pill.amber{background:rgba(192,138,30,.14);color:var(--amber)}
+.pill.red{background:rgba(192,72,63,.12);color:var(--red)}
+.pill.accent{background:rgba(196,113,58,.12);color:var(--accent)}
+.pill.grey{background:rgba(45,33,24,.07);color:var(--ink-60)}
+
+/* ---------- charts ---------- */
+.bars{display:flex;align-items:flex-end;gap:24px;height:200px}
+.bar-col{display:flex;flex-direction:column;align-items:center;gap:10px;flex:1;height:100%;justify-content:flex-end}
+.bar-pair{display:flex;align-items:flex-end;gap:6px;flex:1;width:100%;justify-content:center}
+.bar{width:44px;max-width:22%;background:var(--accent);border-radius:6px 6px 0 0;min-height:2px;transition:height .3s}
+.bar.ink{background:var(--ink)}
+.bar-label{font-size:13px;color:var(--ink-60);text-align:center}
+.bar-cap{font-size:12px;font-weight:600;color:var(--ink-60)}
+.progress{background:var(--line);border-radius:20px;height:12px;overflow:hidden}
+.progress > div{height:100%;background:var(--accent);border-radius:20px;transition:width .3s}
+.legend{display:flex;gap:18px;flex-wrap:wrap}
+.legend span{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink-60)}
+.swatch{width:12px;height:12px;border-radius:3px;background:var(--accent)}
+.swatch.ink{background:var(--ink)}
+
+/* ---------- alerts ---------- */
+.alert{display:flex;align-items:center;gap:10px;border-radius:var(--radius-sm);padding:10px 14px;font-size:14.5px}
+.alert .dot{width:8px;height:8px;border-radius:50%;flex:none}
+.alert.red{background:rgba(192,72,63,.08)} .alert.red .dot{background:var(--red)}
+.alert.amber{background:rgba(192,138,30,.08)} .alert.amber .dot{background:var(--amber)}
+.alert.green{background:rgba(63,138,92,.1)} .alert.green .dot{background:var(--green)}
+
+/* ---------- calendar ---------- */
+.cal-head{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px}
+.cal-head span{text-align:center;font-size:12px;font-weight:600;color:var(--ink-45)}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:minmax(92px,auto);gap:6px}
+.cal-day{border:1px solid var(--line);border-radius:var(--radius-sm);padding:6px;background:var(--card);min-width:0;overflow:hidden}
+.cal-day.out{background:transparent;border-color:transparent}
+.cal-day.today{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.cal-day.busy{background:rgba(196,113,58,.06)}
+.cal-num{font-size:12px;color:var(--ink-45)}
+.cal-chip{margin-top:3px;background:var(--accent);border-radius:4px;padding:2px 6px;color:#fff;font-size:10.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.cal-chip.paid{background:var(--green)} .cal-chip.quoted{background:var(--amber)} .cal-chip.enquiry{background:rgba(45,33,24,.55)}
+
+/* ---------- kanban ---------- */
+.kanban{display:grid;grid-template-columns:repeat(4,minmax(215px,1fr));gap:16px}
+.kan-col{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;min-height:120px;max-height:460px;overflow-y:auto}
+.kan-col.drag-over{border-color:var(--accent);background:rgba(196,113,58,.05)}
+.kan-head{font-weight:600;font-size:14.5px;margin-bottom:10px;display:flex;justify-content:space-between}
+.kan-head .count{color:var(--ink-45)}
+.kan-card{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:11px 12px;margin-bottom:8px;cursor:grab}
+.kan-card:active{cursor:grabbing}
+.kan-card .name{font-weight:600;font-size:13.5px}
+.kan-card .detail{color:var(--ink-60);font-size:12.5px;margin-top:2px}
+.kan-card .bal{font-size:12px;font-weight:700;margin-top:4px}
+
+/* ---------- modal ---------- */
+.modal-back{position:fixed;inset:0;background:rgba(45,33,24,.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:100}
+.modal{background:var(--card);border-radius:var(--radius);max-width:600px;width:100%;max-height:88vh;overflow-y:auto;padding:26px 28px;box-shadow:0 40px 80px -20px rgba(45,33,24,.4)}
+.modal h2{font-size:21px;margin-bottom:4px}
+.modal .sub{color:var(--ink-60);font-size:14px;margin:0 0 20px}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px;flex-wrap:wrap}
+.toast{position:fixed;bottom:24px;max-width:calc(100% - 32px);text-align:center;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 22px;border-radius:24px;font-size:14px;font-weight:500;z-index:200;box-shadow:0 12px 30px -8px rgba(45,33,24,.5)}
+
+.checkbox{display:flex;align-items:center;gap:7px;font-size:13.5px;cursor:pointer;color:var(--ink);font-weight:500}
+.checkbox input{width:auto}
+.check{width:20px;height:20px;border-radius:6px;border:2px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:center;flex:none;cursor:pointer;color:#fff;font-size:12px;font-weight:800}
+.check.on{background:var(--green);border-color:var(--green)}
+.done{opacity:.45;text-decoration:line-through}
+.formula{background:var(--ink);border-radius:12px;padding:14px 20px;color:var(--bg);font-family:Georgia,"Times New Roman",serif;font-size:15px;opacity:.95}
+.label-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+.label-card .contains{border-top:1px solid var(--line);padding-top:10px;margin-top:10px;color:var(--red);font-weight:700;font-size:12px;letter-spacing:.03em}
+.hint{color:var(--ink-45);font-size:12.5px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;background:#fff}
+.seg button{background:none;border:none;padding:7px 14px;font-family:inherit;font-size:13.5px;cursor:pointer;color:var(--ink-60);font-weight:500}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff;font-weight:600}
+.menu-toggle{display:none}
+
+/* ---------- responsive ---------- */
+@media (max-width:1080px){
+  .grid.two,.grid.wide-narrow{grid-template-columns:1fr}
+  .kanban{grid-template-columns:repeat(4,minmax(200px,1fr));overflow-x:auto;padding-bottom:6px}
+}
+@media (max-width:860px){
+  :root{--sidebar:72px}
+  .brand-text,.nav-item .label,.sidebar-foot{display:none}
+  .nav-item{justify-content:center;padding:13px 8px}
+  .nav-badge{position:absolute;margin:0;transform:translate(14px,-12px)}
+  .nav-item{position:relative}
+  .main{padding:24px 18px 60px}
+  .page-title{font-size:25px}
+  .form-grid{grid-template-columns:1fr !important}
+  .thead,.trow{min-width:560px}
+  .cal-grid{grid-auto-rows:minmax(74px,auto)}
+}
+@media (max-width:620px){
+  .sidebar{
+    position:fixed;bottom:0;top:auto;left:0;right:0;width:100%;height:auto;flex-direction:row;
+    padding:6px 4px;overflow-x:auto;border-top:1px solid rgba(250,247,242,.12);
+  }
+  .brand,.spacer,.sidebar-foot{display:none}
+  .nav{flex-direction:row;gap:0}
+  .nav-item{flex-direction:column;gap:5px;padding:8px 5px;font-size:10px;min-width:60px}
+  .nav-item .label{display:none}
+  .nav-item .label-short{display:block;font-size:10px;text-align:center;line-height:1.1;white-space:nowrap}
+  .app{flex-direction:column-reverse}
+  .main{padding:20px 14px 96px;max-width:100%}
+  .kanban{grid-template-columns:repeat(4,minmax(180px,1fr))}
+  .cal-grid{gap:3px;grid-auto-rows:minmax(58px,auto)}
+  .cal-chip{font-size:9px;padding:1px 4px}
+  .modal{padding:20px 18px}
+  .toast{bottom:92px}
+}
+
+/* ---------- print / PDF ---------- */
+#print-root{display:none}
+@media print{
+  @page{size:A4;margin:16mm}
+  body{background:#fff}
+  .app,.modal-back,.toast{display:none !important}
+  #print-root{display:block}
+  .doc{page-break-after:always;color:#2D2118;font-family:var(--font)}
+  .doc:last-child{page-break-after:auto}
+}
+.doc{max-width:720px;margin:0 auto 40px}
+.doc-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--accent);padding-bottom:16px;margin-bottom:24px}
+.doc-kicker{color:var(--accent);font-weight:700;font-size:13px;letter-spacing:.1em;text-transform:uppercase}
+.doc h1{font-size:26px;margin-top:4px}
+.doc-meta{text-align:right;font-size:13px;color:var(--ink-60);line-height:1.7}
+.doc table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+.doc th{text-align:left;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-60);border-bottom:1px solid var(--line);padding:8px 4px}
+.doc td{padding:11px 4px;border-bottom:1px solid var(--line)}
+.doc td.r,.doc th.r{text-align:right}
+.doc-total{display:flex;justify-content:space-between;padding:12px 4px;font-size:16px;font-weight:700;border-top:2px solid var(--ink)}
+.doc-note{margin-top:26px;font-size:12.5px;color:var(--ink-60);line-height:1.7;border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<div id="app" class="app"></div>
+<div id="overlay"></div>
+<div id="print-root"></div>
+<script>
+"use strict";
+/* ============================================================
+   Bakery Business OS — single-file, offline, no dependencies.
+   All data lives in localStorage on this device only.
+   ============================================================ */
+
+/* ---------- utilities ---------- */
+const $ = (sel, root) => (root || document).querySelector(sel);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const DAY = 86400000;
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const parseISO = s => { const [y, m, d] = String(s || "").split("-").map(Number); return new Date(y || 1970, (m || 1) - 1, d || 1); };
+const shiftDays = n => iso(new Date(Date.now() + n * DAY));
+const daysUntil = s => Math.round((parseISO(s) - parseISO(todayISO())) / DAY);
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const fmtDate = s => { if (!s) return "—"; const d = parseISO(s); return MONTHS[d.getMonth()] + " " + d.getDate(); };
+const fmtLongDate = s => { if (!s) return "—"; const d = parseISO(s); return MONTHS[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear(); };
+const monthKey = s => String(s || "").slice(0, 7);
+const sum = (arr, fn) => arr.reduce((a, x) => a + (fn ? fn(x) : x), 0);
+
+/* ---------- state ---------- */
+const STORE_KEY = "bakery-business-os/v1";
+const SCHEMA = 1;
+const ALLERGENS = ["Gluten", "Egg", "Dairy", "Nuts", "Soy"];
+const STATUSES = ["enquiry", "quoted", "booked", "paid"];
+const STATUS_LABEL = { enquiry: "Enquiry", quoted: "Quoted", booked: "Booked", paid: "Paid" };
+const STATUS_TONE = { enquiry: "grey", quoted: "amber", booked: "accent", paid: "green" };
+
+let db = null;          // the whole business, persisted
+let view = "dashboard"; // current module
+let ui = {};            // transient view state (filters, expanded rows, drafts)
+
+function seed() {
+  const t = todayISO();
+  const ing = (name, unit, stock, reorder, cost, expiry) =>
+    ({ id: uid(), name, unit, stock, reorder, cost, expiry });
+  const prod = (name, ingCost, labour, overhead, margin, allergens, category) =>
+    ({ id: uid(), name, ingCost, labour, overhead, margin, allergens, category });
+
+  const products = [
+    prod("Classic Vanilla Cake", 14.2, 18, 4.1, 45, ["Gluten", "Egg", "Dairy"], "Custom cakes"),
+    prod("Choc Fudge Cake", 17.5, 20, 4.4, 45, ["Gluten", "Egg", "Dairy", "Nuts"], "Custom cakes"),
+    prod("Red Velvet Cake", 16.0, 19, 4.2, 45, ["Gluten", "Egg", "Dairy"], "Custom cakes"),
+    prod("Lemon Drizzle Loaf", 7.4, 9, 2.2, 50, ["Gluten", "Egg"], "Market stall"),
+    prod("Cupcakes (box of 12)", 9.8, 12, 3.0, 48, ["Gluten", "Egg", "Dairy"], "Cupcake orders"),
+    prod("Macarons (box of 12)", 11.2, 16, 3.4, 52, ["Egg", "Dairy", "Nuts"], "Market stall")
+  ];
+  const customers = [
+    { id: uid(), name: "Maria Torres", email: "maria.torres@example.com", phone: "555-0142", notes: "Prefers buttercream, no fondant." },
+    { id: uid(), name: "James Reyes", email: "james.reyes@example.com", phone: "555-0188", notes: "Office orders, invoices to accounts." },
+    { id: uid(), name: "Priya Desai", email: "priya.d@example.com", phone: "555-0113", notes: "Nut allergy in family — always flag." },
+    { id: uid(), name: "Ella Marsh", email: "ella.marsh@example.com", phone: "555-0167", notes: "" },
+    { id: uid(), name: "Sana Khan", email: "sana.khan@example.com", phone: "555-0125", notes: "Wedding, tasting booked." }
+  ];
+  const byName = n => customers.find(c => c.name === n).id;
+  const pByName = n => products.find(p => p.name === n).id;
+  const order = (cust, product, qty, date, status, total, deposit, notes) => ({
+    id: uid(), customerId: byName(cust), productId: pByName(product), qty, date,
+    status, total, deposit, notes: notes || "", createdAt: t
+  });
+
+  return {
+    schema: SCHEMA,
+    settings: {
+      bakeryName: "Rosewood Bakehouse", ownerName: "", email: "hello@rosewoodbakehouse.com",
+      phone: "555-0100", address: "14 Mill Lane", currency: "$", taxRate: 0,
+      monthlyGoal: 5000, defaultMargin: 45, depositPct: 33, quoteValidDays: 14,
+      terms: "Deposit secures your date. Balance due on collection or delivery."
+    },
+    customers, products,
+    ingredients: [
+      ing("Cake flour", "kg", 8, 4, 2.4, shiftDays(180)),
+      ing("Unsalted butter", "kg", 2.4, 3, 9.5, shiftDays(26)),
+      ing("Free-range eggs", "units", 6, 24, 0.42, shiftDays(11)),
+      ing("Caster sugar", "kg", 5.5, 3, 1.9, shiftDays(300)),
+      ing("Vanilla extract", "ml", 90, 150, 0.12, shiftDays(400)),
+      ing("Cream cheese", "kg", 1.1, 1.5, 11.2, shiftDays(5)),
+      ing("Cocoa powder", "kg", 1.8, 1, 14.0, shiftDays(220)),
+      ing("Ground almonds", "kg", 0.9, 1, 16.5, shiftDays(60))
+    ],
+    orders: [
+      order("Maria Torres", "Classic Vanilla Cake", 1, shiftDays(3), "booked", 180, 60, "Birthday — 'Happy 40th Maria', pickup 3pm."),
+      order("James Reyes", "Cupcakes (box of 12)", 4, shiftDays(5), "quoted", 95, 0, "Office party, delivery 5pm."),
+      order("Priya Desai", "Choc Fudge Cake", 1, shiftDays(-6), "paid", 310, 310, "Baby shower, 2 tiers."),
+      order("Ella Marsh", "Red Velvet Cake", 1, shiftDays(-9), "paid", 140, 140, "Collected."),
+      order("Sana Khan", "Classic Vanilla Cake", 3, shiftDays(21), "enquiry", 620, 0, "Wedding — tasting Friday."),
+      order("Ella Marsh", "Lemon Drizzle Loaf", 4, shiftDays(0), "booked", 72, 72, "Market stall pre-order."),
+      order("Priya Desai", "Cupcakes (box of 12)", 3, shiftDays(-1), "paid", 96, 96, ""),
+      order("Maria Torres", "Macarons (box of 12)", 2, shiftDays(-2), "paid", 76, 76, ""),
+      order("James Reyes", "Lemon Drizzle Loaf", 5, shiftDays(-4), "paid", 90, 90, "Weekly office drop."),
+      order("Sana Khan", "Red Velvet Cake", 1, shiftDays(-11), "paid", 155, 155, ""),
+      order("Ella Marsh", "Choc Fudge Cake", 1, shiftDays(-13), "paid", 185, 185, "Leaving party."),
+      order("Maria Torres", "Cupcakes (box of 12)", 2, shiftDays(-16), "paid", 68, 68, ""),
+      order("Priya Desai", "Macarons (box of 12)", 4, shiftDays(-18), "paid", 148, 148, "Baby shower favours."),
+      order("James Reyes", "Lemon Drizzle Loaf", 6, shiftDays(-34), "paid", 108, 108, "Market pre-order."),
+      order("Ella Marsh", "Cupcakes (box of 12)", 2, shiftDays(-48), "paid", 64, 64, ""),
+      order("Priya Desai", "Classic Vanilla Cake", 1, shiftDays(-61), "paid", 165, 165, ""),
+      order("Sana Khan", "Choc Fudge Cake", 1, shiftDays(-75), "paid", 190, 190, ""),
+      order("Maria Torres", "Red Velvet Cake", 1, shiftDays(-96), "paid", 150, 150, ""),
+      order("James Reyes", "Macarons (box of 12)", 3, shiftDays(-112), "paid", 114, 114, ""),
+      order("Ella Marsh", "Cupcakes (box of 12)", 5, shiftDays(-125), "paid", 160, 160, ""),
+      order("Priya Desai", "Lemon Drizzle Loaf", 4, shiftDays(-138), "paid", 74, 74, ""),
+      order("Sana Khan", "Classic Vanilla Cake", 1, shiftDays(-152), "paid", 145, 145, ""),
+      order("Maria Torres", "Cupcakes (box of 12)", 3, shiftDays(-165), "paid", 98, 98, ""),
+      order("Ella Marsh", "Red Velvet Cake", 1, shiftDays(-42), "paid", 142, 142, ""),
+      order("Sana Khan", "Lemon Drizzle Loaf", 5, shiftDays(-68), "paid", 92, 92, ""),
+      order("Priya Desai", "Choc Fudge Cake", 1, shiftDays(-29), "paid", 178, 178, ""),
+      order("Maria Torres", "Macarons (box of 12)", 2, shiftDays(-37), "paid", 82, 82, ""),
+      order("James Reyes", "Cupcakes (box of 12)", 4, shiftDays(-52), "paid", 128, 128, ""),
+      order("Ella Marsh", "Classic Vanilla Cake", 1, shiftDays(-58), "paid", 158, 158, ""),
+      order("Sana Khan", "Cupcakes (box of 12)", 3, shiftDays(-80), "paid", 104, 104, ""),
+      order("Maria Torres", "Lemon Drizzle Loaf", 4, shiftDays(-88), "paid", 78, 78, ""),
+      order("Priya Desai", "Red Velvet Cake", 1, shiftDays(-104), "paid", 148, 148, ""),
+      order("James Reyes", "Classic Vanilla Cake", 1, shiftDays(-118), "paid", 162, 162, ""),
+      order("Ella Marsh", "Macarons (box of 12)", 3, shiftDays(-133), "paid", 118, 118, ""),
+      order("Sana Khan", "Choc Fudge Cake", 1, shiftDays(-146), "paid", 172, 172, ""),
+      order("Maria Torres", "Cupcakes (box of 12)", 4, shiftDays(-159), "paid", 132, 132, ""),
+      order("Priya Desai", "Lemon Drizzle Loaf", 5, shiftDays(-171), "paid", 96, 96, "")
+    ],
+    expenses: [
+      { id: uid(), category: "Packaging", amount: 82.4, date: shiftDays(-4), notes: "Boxes & ribbon" },
+      { id: uid(), category: "Ingredients restock", amount: 214.9, date: shiftDays(-12), notes: "" },
+      { id: uid(), category: "Market stall fee", amount: 45, date: shiftDays(-19), notes: "Saturday pitch" },
+      { id: uid(), category: "Utilities", amount: 128, date: shiftDays(-33), notes: "" },
+      { id: uid(), category: "Ingredients restock", amount: 186.3, date: shiftDays(-44), notes: "" },
+      { id: uid(), category: "Equipment", amount: 240, date: shiftDays(-70), notes: "Stand mixer service" },
+      { id: uid(), category: "Ingredients restock", amount: 162.5, date: shiftDays(-98), notes: "" },
+      { id: uid(), category: "Packaging", amount: 71.2, date: shiftDays(-129), notes: "" },
+      { id: uid(), category: "Ingredients restock", amount: 149.8, date: shiftDays(-158), notes: "" }
+    ],
+    tasks: [
+      { id: uid(), text: "Order box supplies", done: true, due: shiftDays(-2) },
+      { id: uid(), text: "Confirm Saturday delivery slot", done: true, due: shiftDays(-1) },
+      { id: uid(), text: "Restock vanilla extract", done: false, due: shiftDays(1) },
+      { id: uid(), text: "Post market-stall photo", done: false, due: shiftDays(2) }
+    ],
+    bakes: [
+      { id: uid(), productId: pByName("Classic Vanilla Cake"), qty: 1, date: shiftDays(-1), notes: "" },
+      { id: uid(), productId: pByName("Cupcakes (box of 12)"), qty: 2, date: shiftDays(-3), notes: "" },
+      { id: uid(), productId: pByName("Macarons (box of 12)"), qty: 1, date: shiftDays(-5), notes: "Shells cracked — see waste log" }
+    ],
+    waste: [
+      { id: uid(), item: "Sponge trimmings", qty: "0.4 kg", reason: "Over-baked", cost: 2.1, date: shiftDays(-2) },
+      { id: uid(), item: "Buttercream", qty: "150 g", reason: "Colour mismatch", cost: 1.4, date: shiftDays(-5) },
+      { id: uid(), item: "Macarons", qty: "6 pcs", reason: "Cracked shells", cost: 3.6, date: shiftDays(-5) }
+    ],
+    social: [
+      { id: uid(), caption: "Behind the scenes: Maria's 40th birthday cake", date: shiftDays(1), channel: "Instagram", done: false },
+      { id: uid(), caption: "Saturday market — what's on the table", date: shiftDays(4), channel: "Facebook", done: false },
+      { id: uid(), caption: "Recipe reel: lemon drizzle", date: shiftDays(-3), channel: "TikTok", done: true }
+    ],
+    meta: { lastBackup: null, createdAt: t, sample: true }
+  };
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.schema) return migrate(parsed);
+    }
+  } catch (e) { console.warn("Could not read saved data:", e); }
+  return seed();
+}
+
+function migrate(data) {
+  const base = seed();
+  // Fill in any keys added by a newer version without touching the user's records.
+  for (const key of Object.keys(base)) if (!(key in data)) data[key] = Array.isArray(base[key]) ? [] : base[key];
+  data.settings = Object.assign({}, base.settings, data.settings || {});
+  data.meta = Object.assign({}, base.meta, data.meta || {});
+  data.schema = SCHEMA;
+  return data;
+}
+
+let saveTimer = null;
+function writeNow() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); }
+  catch (e) { toast("Could not save — device storage may be full."); console.error(e); }
+}
+/** Writes are debounced so fast typing doesn't thrash storage, then
+    flushed the moment the page is hidden or closed. */
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(writeNow, 120);
+}
+window.addEventListener("pagehide", () => { if (saveTimer) writeNow(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && saveTimer) writeNow(); });
+
+/** Mutate state, persist, re-render. */
+function commit(fn, message) {
+  fn();
+  db.meta.sample = false;
+  save();
+  render();
+  if (message) toast(message);
+}
+
+/* ---------- money ---------- */
+const cur = () => (db && db.settings.currency) || "$";
+function money(n, opts) {
+  const v = Number(n) || 0;
+  const compact = opts && opts.compact && Math.abs(v) >= 10000;
+  const body = compact
+    ? (v / 1000).toFixed(1).replace(/\.0$/, "") + "k"
+    : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (v < 0 ? "-" : "") + cur() + body.replace(/^-/, "");
+}
+const money0 = n => cur() + Math.round(Number(n) || 0).toLocaleString();
+
+/* ---------- derived business logic ---------- */
+const customerById = id => db.customers.find(c => c.id === id);
+const productById = id => db.products.find(p => p.id === id);
+const customerName = id => (customerById(id) || {}).name || "—";
+const productName = id => (productById(id) || {}).name || "—";
+
+/** Unit cost and suggested price for a product, from the pricing formula. */
+function costing(p) {
+  const cost = num(p.ingCost) + num(p.labour) + num(p.overhead);
+  const margin = clamp(num(p.margin), 0, 95);
+  const price = cost / (1 - margin / 100);
+  return { cost, price, profit: price - cost, marginPct: price > 0 ? ((price - cost) / price) * 100 : 0 };
+}
+
+const orderBalance = o => Math.max(0, num(o.total) - num(o.deposit));
+const isRevenue = o => o.status === "paid" || o.status === "booked";
+
+/** Cash actually received: full total once paid, deposit while booked/quoted. */
+const received = o => (o.status === "paid" ? num(o.total) : num(o.deposit));
+const outstanding = o => (o.status === "paid" ? 0 : o.status === "booked" ? orderBalance(o) : 0);
+
+function ingredientStatus(i) {
+  const days = i.expiry ? daysUntil(i.expiry) : null;
+  if (days !== null && days <= 0) return { key: "expired", label: "Expired", tone: "red" };
+  if (days !== null && days <= 14) return { key: "expiring", label: "Expiring", tone: "red" };
+  if (num(i.stock) <= 0) return { key: "out", label: "Out of stock", tone: "red" };
+  if (num(i.stock) <= num(i.reorder)) return { key: "low", label: "Low", tone: "amber" };
+  return { key: "good", label: "Good", tone: "green" };
+}
+
+const stockValue = () => sum(db.ingredients, i => num(i.stock) * num(i.cost));
+const lowStock = () => db.ingredients.filter(i => ["low", "out"].includes(ingredientStatus(i).key));
+const expiringSoon = () => db.ingredients.filter(i => ["expiring", "expired"].includes(ingredientStatus(i).key));
+
+/** Revenue, expenses and profit for a given YYYY-MM. */
+function monthStats(key) {
+  const orders = db.orders.filter(o => monthKey(o.date) === key && isRevenue(o));
+  const revenue = sum(orders, o => num(o.total));
+  const expenses = sum(db.expenses.filter(e => monthKey(e.date) === key), e => num(e.amount));
+  const ingredientCost = sum(orders, o => {
+    const p = productById(o.productId);
+    return p ? costing(p).cost * num(o.qty || 1) : 0;
+  });
+  return { key, revenue, expenses, ingredientCost, profit: revenue - expenses - ingredientCost, count: orders.length };
+}
+
+function lastMonths(n) {
+  const out = [];
+  const d = new Date();
+  d.setDate(1);
+  for (let i = n - 1; i >= 0; i--) {
+    const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    out.push(Object.assign(monthStats(iso(m).slice(0, 7)), { label: MONTHS[m.getMonth()], year: m.getFullYear() }));
+  }
+  return out;
+}
+
+/** Everything the dashboard needs to shout about. */
+function alerts() {
+  const out = [];
+  for (const i of expiringSoon()) {
+    const d = daysUntil(i.expiry);
+    out.push({ level: "critical", text: d <= 0 ? i.name + " expired " + Math.abs(d) + " day" + (Math.abs(d) === 1 ? "" : "s") + " ago" : i.name + " expires in " + d + " day" + (d === 1 ? "" : "s") });
+  }
+  for (const o of db.orders) {
+    if (o.status === "booked" && daysUntil(o.date) < 0 && orderBalance(o) > 0)
+      out.push({ level: "critical", text: customerName(o.customerId) + " — " + money(orderBalance(o)) + " balance overdue" });
+  }
+  for (const i of lowStock()) {
+    const s = ingredientStatus(i);
+    out.push({ level: s.key === "out" ? "critical" : "soon", text: i.name + " — " + (s.key === "out" ? "out of stock" : num(i.stock) + " " + i.unit + " left (reorder at " + i.reorder + ")") });
+  }
+  for (const o of db.orders) {
+    const d = daysUntil(o.date);
+    if (o.status === "quoted" && d >= 0 && d <= 3)
+      out.push({ level: "soon", text: "Quote for " + customerName(o.customerId) + " is unconfirmed — needed " + (d === 0 ? "today" : "in " + d + " day" + (d === 1 ? "" : "s")) });
+  }
+  for (const t of db.tasks) {
+    if (!t.done && t.due && daysUntil(t.due) < 0) out.push({ level: "soon", text: "Task overdue: " + t.text });
+  }
+  return out;
+}
+const ordersOn = dateISO => db.orders.filter(o => o.date === dateISO);
+</script>
+<script>
+/* ============================================================
+   Shell: navigation, rendering, forms, actions, dialogs.
+   ============================================================ */
+const NAV = [
+  { id: "dashboard",  label: "Dashboard",           short: "Home" },
+  { id: "calendar",   label: "Order calendar",      short: "Calendar" },
+  { id: "orders",     label: "Enquiries & orders",  short: "Orders" },
+  { id: "customers",  label: "Customers",           short: "People" },
+  { id: "products",   label: "Products & costing",  short: "Products" },
+  { id: "inventory",  label: "Inventory",           short: "Stock" },
+  { id: "payments",   label: "Payments & P&L",      short: "Money" },
+  { id: "kitchen",    label: "Tasks & bake log",    short: "Kitchen" },
+  { id: "settings",   label: "Settings & backup",   short: "Setup" }
+];
+
+const VIEWS = {}; // populated below, one render function per module
+
+function render() {
+  const main = $("#app .main");
+  const scroll = main ? main.scrollTop : 0;
+  const badges = { orders: alerts().filter(a => a.level === "critical").length, inventory: lowStock().length + expiringSoon().length };
+  $("#app").innerHTML =
+    '<nav class="sidebar" aria-label="Modules">' +
+      '<div class="brand"><div class="brand-mark">B</div><span class="brand-text">Bakery<br>Business OS</span></div>' +
+      '<div class="nav">' + NAV.map(n =>
+        '<button class="nav-item" data-act="go" data-view="' + n.id + '"' + (view === n.id ? ' aria-current="page"' : "") + '>' +
+          '<span class="dot"></span><span class="label">' + esc(n.label) + '</span>' +
+          '<span class="label-short">' + esc(n.short) + '</span>' +
+          (badges[n.id] ? '<span class="nav-badge">' + badges[n.id] + '</span>' : "") +
+        '</button>').join("") +
+      '</div><div class="spacer"></div>' +
+      '<div class="sidebar-foot">v1.0 · offline<br>' + esc(db.settings.bakeryName) + '</div>' +
+    '</nav>' +
+    '<main class="main" id="main" tabindex="-1">' + (VIEWS[view] || VIEWS.dashboard)() + '</main>';
+  const m = $("#app .main");
+  if (m && view === renderedView) m.scrollTop = scroll;
+  renderedView = view;
+}
+let renderedView = view;
+
+function go(next) {
+  if (!VIEWS[next]) next = "dashboard";
+  view = next;
+  ui = {};
+  location.hash = next;
+  render();
+  const m = $("#main");
+  if (m) { m.scrollTop = 0; m.focus({ preventScroll: true }); }
+}
+
+/* ---------- toast & modal ---------- */
+let toastTimer = null;
+function toast(msg) {
+  const old = $(".toast"); if (old) old.remove();
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.setAttribute("role", "status");
+  el.textContent = msg;
+  document.body.appendChild(el);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.remove(), 2600);
+}
+
+function closeModal() { $("#overlay").innerHTML = ""; }
+
+/** Show a modal. body is HTML; actions is [{label, act, cls}]. */
+function modal(title, sub, body, actions) {
+  $("#overlay").innerHTML =
+    '<div class="modal-back" data-act="closeModalBack"><div class="modal" role="dialog" aria-modal="true" aria-label="' + esc(title) + '">' +
+      '<h2>' + esc(title) + '</h2>' + (sub ? '<p class="sub">' + esc(sub) + '</p>' : '<div style="height:14px"></div>') +
+      body +
+      '<div class="modal-actions">' +
+        (actions || []).map(a => '<button class="btn ' + (a.cls || "neutral") + '" data-act="' + a.act + '"' + (a.data || "") + '>' + esc(a.label) + '</button>').join("") +
+      '</div>' +
+    '</div></div>';
+  const first = $("#overlay input, #overlay select, #overlay textarea, #overlay button");
+  if (first) first.focus();
+}
+
+function confirmDo(title, message, label, fn) {
+  pendingConfirm = fn;
+  modal(title, message, "", [
+    { label: "Cancel", act: "closeModal" },
+    { label: label, act: "confirmYes", cls: "danger" }
+  ]);
+}
+let pendingConfirm = null;
+
+/* ---------- forms ---------- */
+/** The [data-form] block `el` belongs to. Buttons in a dialog's action
+    bar sit outside the form, so fall back to the form in that dialog. */
+function formOf(el) {
+  return el.closest("[data-form]") ||
+    (el.closest(".modal") || document).querySelector("[data-form]");
+}
+/** Collect values from the form block `el` belongs to. */
+function readForm(el) {
+  const form = formOf(el);
+  const out = {};
+  if (!form) return out;
+  form.querySelectorAll("[data-f]").forEach(f => {
+    if (f.type === "checkbox") {
+      if (f.dataset.group) { (out[f.dataset.group] = out[f.dataset.group] || []); if (f.checked) out[f.dataset.group].push(f.dataset.f); }
+      else out[f.dataset.f] = f.checked;
+    } else out[f.dataset.f] = f.value;
+  });
+  return out;
+}
+function clearForm(el) {
+  const form = formOf(el);
+  if (!form) return;
+  form.querySelectorAll("[data-f]").forEach(f => {
+    if (f.type === "checkbox") f.checked = false;
+    else if (f.dataset.keep === undefined) f.value = f.dataset.default || "";
+  });
+}
+const field = (label, inner) => '<label class="field">' + esc(label) + inner + '</label>';
+const input = (name, attrs) => '<input data-f="' + name + '" ' + (attrs || "") + '>';
+const selectOf = (name, options, selected, placeholder) =>
+  '<select data-f="' + name + '">' +
+    (placeholder ? '<option value="">' + esc(placeholder) + '</option>' : "") +
+    options.map(o => '<option value="' + esc(o.value) + '"' + (o.value === selected ? " selected" : "") + '>' + esc(o.label) + '</option>').join("") +
+  '</select>';
+const customerOptions = () => db.customers.slice().sort((a, b) => a.name.localeCompare(b.name)).map(c => ({ value: c.id, label: c.name }));
+const productOptions = () => db.products.map(p => ({ value: p.id, label: p.name }));
+
+/* ---------- shared view pieces ---------- */
+const header = (title, sub) => '<h1 class="page-title">' + esc(title) + '</h1><p class="page-sub">' + esc(sub) + '</p>';
+const card = (title, body, cls) => '<section class="card ' + (cls || "") + '">' + (title ? '<div class="card-title">' + esc(title) + '</div>' : "") + body + '</section>';
+const emptyRow = msg => '<div class="empty">' + esc(msg) + '</div>';
+const pill = (label, tone) => '<span class="pill ' + tone + '">' + esc(label) + '</span>';
+const delBtn = (act, id, label) => '<button class="icon-btn" data-act="' + act + '" data-id="' + id + '" title="' + esc(label || "Delete") + '" aria-label="' + esc(label || "Delete") + '">&#10005;</button>';
+
+/** A bar chart column set. rows: [{label, values:[{v, cls}]}] scaled to max. */
+function barChart(rows, height) {
+  const h = height || 190;
+  const max = Math.max(1, ...rows.flatMap(r => r.values.map(v => v.v)));
+  return '<div class="bars" style="height:' + (h + 30) + 'px">' + rows.map(r =>
+    '<div class="bar-col">' +
+      '<div class="bar-pair" style="height:' + h + 'px">' +
+        r.values.map(v => '<div class="bar ' + (v.cls || "") + '" style="height:' + Math.max(2, (v.v / max) * h) + 'px" title="' + esc(v.title || money(v.v)) + '"></div>').join("") +
+      '</div>' +
+      '<span class="bar-label">' + esc(r.label) + '</span>' +
+    '</div>').join("") + '</div>';
+}
+
+/* ---------- global event wiring ---------- */
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  const act = el.dataset.act;
+  if (act === "closeModalBack" && e.target !== el) return; // only the backdrop itself
+  const fn = ACTIONS[act];
+  if (!fn) return;
+  e.preventDefault();
+  fn(el.dataset, el, e);
+});
+document.addEventListener("change", e => {
+  const el = e.target.closest("[data-change]");
+  if (!el) return;
+  const fn = ACTIONS[el.dataset.change];
+  if (fn) fn(el.dataset, el, e);
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && $("#overlay").innerHTML) closeModal();
+  if (e.key === "Enter" && e.target.matches("[data-f][data-enter]")) {
+    const btn = e.target.closest("[data-form]").querySelector("[data-submit]");
+    if (btn) btn.click();
+  }
+});
+window.addEventListener("hashchange", () => {
+  const h = location.hash.replace("#", "");
+  if (h && h !== view) go(h);
+});
+</script>
+<script>
+/* ============================================================
+   Module: Dashboard
+   ============================================================ */
+VIEWS.dashboard = function () {
+  const thisKey = todayISO().slice(0, 7);
+  const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
+  const prev = monthStats(iso(d).slice(0, 7));
+  const cur_ = monthStats(thisKey);
+  const monthOrders = db.orders.filter(o => monthKey(o.date) === thisKey && isRevenue(o));
+  const avg = monthOrders.length ? cur_.revenue / monthOrders.length : 0;
+  const prevOrders = db.orders.filter(o => monthKey(o.date) === prev.key && isRevenue(o));
+  const prevAvg = prevOrders.length ? prev.revenue / prevOrders.length : 0;
+  const owed = sum(db.orders, outstanding);
+  const goal = num(db.settings.monthlyGoal);
+  const goalPct = goal > 0 ? clamp(Math.round((cur_.revenue / goal) * 100), 0, 999) : 0;
+
+  const delta = (now, before, asMoney) => {
+    if (!before) return { cls: "flat", text: before === 0 && now > 0 ? "First revenue this month" : "No comparison yet" };
+    const diff = now - before;
+    const pct = Math.round((diff / Math.abs(before)) * 100);
+    const shown = asMoney ? money(Math.abs(diff)) : Math.abs(pct) + "%";
+    return { cls: diff >= 0 ? "up" : "down", text: (diff >= 0 ? "+" : "\u2212") + shown + " vs last month" };
+  };
+  const dRev = delta(cur_.revenue, prev.revenue), dAvg = delta(avg, prevAvg, true), dProfit = delta(cur_.profit, prev.profit);
+
+  const kpi = (label, value, sub) =>
+    '<div class="card"><div class="kpi-label">' + esc(label) + '</div><div class="kpi-value num">' + esc(value) + '</div>' +
+    '<div class="kpi-sub ' + sub.cls + '">' + esc(sub.text) + '</div></div>';
+
+  const all = alerts();
+  const critical = all.filter(a => a.level === "critical");
+  const soon = all.filter(a => a.level === "soon");
+  const today = ordersOn(todayISO());
+
+  // Revenue by product category, this month
+  const cats = {};
+  for (const o of monthOrders) {
+    const p = productById(o.productId);
+    const key = (p && p.category) || "Other";
+    cats[key] = (cats[key] || 0) + num(o.total);
+  }
+  const catRows = Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    .map(([label, v]) => ({ label, values: [{ v, title: money(v) }] }));
+
+  return header("Dashboard", "See your bakery at a glance.") +
+    '<div class="grid kpis mb">' +
+      kpi("Revenue this month", money0(cur_.revenue), dRev) +
+      kpi("Avg order value", money0(avg), dAvg) +
+      kpi("Net profit", money0(cur_.profit), dProfit) +
+      '<div class="card"><div class="kpi-label">Outstanding payments</div>' +
+        '<div class="kpi-value num" style="color:var(--amber)">' + money0(owed) + '</div>' +
+        '<div class="kpi-sub flat">Owed by customers</div></div>' +
+    '</div>' +
+
+    '<section class="card mb"><div class="card-title">Today&rsquo;s priority</div>' +
+      (critical.length === 0 && soon.length === 0 && today.length === 0
+        ? '<div class="alert green"><span class="dot"></span>Nothing critical today. Enjoy the quiet.</div>'
+        : "") +
+      (critical.length ? '<div class="stack" style="gap:8px;margin-bottom:14px">' +
+        critical.map(a => '<div class="alert red"><span class="dot"></span><span class="strong">' + esc(a.text) + '</span></div>').join("") + '</div>' : "") +
+      (today.length ? '<div style="border-top:1px solid var(--line);padding-top:14px;margin-bottom:14px">' +
+        '<div class="strong" style="font-size:14px;opacity:.7;margin-bottom:8px">Today&rsquo;s orders</div>' +
+        today.map(o => '<div class="row between" style="padding:6px 0;font-size:14.5px"><span>' + esc(customerName(o.customerId)) + ' — ' + esc(productName(o.productId)) +
+          '</span><span class="strong num">' + money(o.total) + '</span></div>').join("") + '</div>' : "") +
+      (soon.length ? '<div class="stack" style="gap:8px">' +
+        soon.slice(0, 5).map(a => '<div class="alert amber"><span class="dot"></span>' + esc(a.text) + '</div>').join("") + '</div>' : "") +
+    '</section>' +
+
+    '<div class="grid wide-narrow">' +
+      card("Revenue by category (this month)",
+        catRows.length ? barChart(catRows, 190) : emptyRow("No revenue logged this month yet.")) +
+      '<div class="stack">' +
+        '<section class="card">' +
+          '<div class="row between strong" style="margin-bottom:10px"><span>Monthly goal</span><span class="num">' + goalPct + '%</span></div>' +
+          '<div class="progress"><div style="width:' + Math.min(100, goalPct) + '%"></div></div>' +
+          '<div class="hint" style="margin-top:8px">' + money0(cur_.revenue) + ' of ' + money0(goal) + ' target</div>' +
+        '</section>' +
+        '<section class="card"><div class="card-title">Quick actions</div><div class="stack" style="gap:8px">' +
+          '<button class="btn block" data-act="go" data-view="orders">Add an enquiry</button>' +
+          '<button class="btn ghost block" data-act="printBakeSheet">Print today&rsquo;s bake sheet</button>' +
+          '<button class="btn neutral block" data-act="go" data-view="settings">Backup my data</button>' +
+        '</div></section>' +
+      '</div>' +
+    '</div>';
+};
+
+/* ============================================================
+   Module: Order calendar
+   ============================================================ */
+VIEWS.calendar = function () {
+  const base = ui.month ? parseISO(ui.month + "-01") : (() => { const d = new Date(); d.setDate(1); return d; })();
+  const year = base.getFullYear(), month = base.getMonth();
+  const first = new Date(year, month, 1);
+  const startPad = first.getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = Math.ceil((startPad + daysInMonth) / 7) * 7;
+  const monthOrders = db.orders.filter(o => monthKey(o.date) === iso(first).slice(0, 7));
+  const revenue = sum(monthOrders.filter(isRevenue), o => num(o.total));
+
+  let grid = "";
+  for (let i = 0; i < cells; i++) {
+    const dayNum = i - startPad + 1;
+    if (dayNum < 1 || dayNum > daysInMonth) { grid += '<div class="cal-day out"></div>'; continue; }
+    const date = iso(new Date(year, month, dayNum));
+    const list = ordersOn(date);
+    const classes = ["cal-day"];
+    if (date === todayISO()) classes.push("today");
+    if (list.length) classes.push("busy");
+    grid += '<div class="' + classes.join(" ") + '"><span class="cal-num">' + dayNum + '</span>' +
+      list.map(o => '<div class="cal-chip ' + o.status + '" data-act="openOrder" data-id="' + o.id + '" title="' +
+        esc(customerName(o.customerId) + " — " + productName(o.productId) + " · " + money(o.total)) + '">' +
+        esc(customerName(o.customerId).split(" ")[0] + " · " + productName(o.productId)) + '</div>').join("") +
+      '</div>';
+  }
+
+  const upcoming = db.orders.filter(o => daysUntil(o.date) >= 0 && o.status !== "paid")
+    .sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6);
+
+  return header("Order calendar", MONTHS[month] + " " + year + " · " + monthOrders.length + " order" + (monthOrders.length === 1 ? "" : "s") + " · " + money0(revenue) + " booked") +
+    '<div class="row between mb">' +
+      '<div class="row">' +
+        '<button class="btn neutral sm" data-act="calMove" data-by="-1">&larr; Prev</button>' +
+        '<button class="btn neutral sm" data-act="calToday">Today</button>' +
+        '<button class="btn neutral sm" data-act="calMove" data-by="1">Next &rarr;</button>' +
+      '</div>' +
+      '<div class="legend">' +
+        '<span><i class="swatch" style="background:rgba(45,33,24,.55)"></i>Enquiry</span>' +
+        '<span><i class="swatch" style="background:var(--amber)"></i>Quoted</span>' +
+        '<span><i class="swatch"></i>Booked</span>' +
+        '<span><i class="swatch" style="background:var(--green)"></i>Paid</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="cal-head">' + ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(w => '<span>' + w + '</span>').join("") + '</div>' +
+    '<div class="cal-grid mb">' + grid + '</div>' +
+    '<div class="grid two">' +
+      card("Coming up", upcoming.length ? upcoming.map(o =>
+        '<div class="row between" style="padding:10px 0;border-bottom:1px solid var(--line)">' +
+          '<span>' + esc(customerName(o.customerId)) + ' — ' + esc(productName(o.productId)) + '</span>' +
+          '<span class="muted">' + fmtDate(o.date) + ' · ' + STATUS_LABEL[o.status] + '</span>' +
+        '</div>').join("") : emptyRow("Nothing scheduled. Time to drum up orders.")) +
+      card("Print for the kitchen",
+        '<p class="hint" style="margin-top:0">A bake sheet lists every order for a day — products, quantities, allergens and notes.</p>' +
+        '<div data-form="bakesheet" class="form-grid" style="grid-template-columns:1fr auto">' +
+          field("Date", '<input type="date" data-f="date" value="' + todayISO() + '">') +
+          '<button class="btn" data-act="printBakeSheetFor">Print bake sheet</button>' +
+        '</div>') +
+    '</div>';
+};
+</script>
+<script>
+/* ============================================================
+   Module: Enquiries & orders
+   ============================================================ */
+VIEWS.orders = function () {
+  const filter = ui.filter || "all";
+  const q = (ui.q || "").toLowerCase();
+  const rows = db.orders
+    .filter(o => filter === "all" || o.status === filter)
+    .filter(o => !q || (customerName(o.customerId) + " " + productName(o.productId) + " " + o.notes).toLowerCase().includes(q))
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  const cols = STATUSES.map(s => {
+    const list = db.orders.filter(o => o.status === s).sort((a, b) => a.date.localeCompare(b.date));
+    return '<div class="kan-col" data-drop="' + s + '">' +
+      '<div class="kan-head"><span>' + STATUS_LABEL[s] + '</span><span class="count">' + list.length + '</span></div>' +
+      (list.length ? list.map(o => {
+        const bal = orderBalance(o);
+        const balLabel = o.status === "paid" ? money(o.total) + " settled"
+          : o.status === "booked" ? money(bal) + " outstanding"
+          : money(o.total) + " estimate";
+        return '<div class="kan-card" draggable="true" data-id="' + o.id + '" data-act="openOrder">' +
+          '<div class="name">' + esc(customerName(o.customerId)) + '</div>' +
+          '<div class="detail">' + esc(productName(o.productId)) + (num(o.qty) > 1 ? " ×" + o.qty : "") + ' · ' + fmtDate(o.date) + '</div>' +
+          '<div class="bal" style="color:' + (o.status === "paid" ? "var(--green)" : bal > 0 ? "var(--amber)" : "var(--ink-60)") + '">' +
+            balLabel + '</div>' +
+          (s !== "paid" ? '<button class="btn ghost sm" style="margin-top:8px" data-act="advance" data-id="' + o.id + '">Move to ' + STATUS_LABEL[STATUSES[STATUSES.indexOf(s) + 1]] + '</button>' : "") +
+        '</div>';
+      }).join("") : '<div class="hint" style="padding:8px 2px">Drag an order here.</div>') +
+    '</div>';
+  }).join("");
+
+  const cols5 = "2fr 1.4fr .8fr 1fr 1fr 1fr 96px";
+  return header("Enquiries & orders", 'From "how much for a cake?" to paid.') +
+    '<section class="card mb" data-form="order">' +
+      '<div class="card-title">New enquiry / order</div>' +
+      '<div class="form-grid" style="grid-template-columns:1.3fr 1.3fr .6fr .9fr .9fr auto">' +
+        field("Customer", selectOf("customerId", customerOptions(), "", "Select…")) +
+        field("Product", selectOf("productId", productOptions(), "", "Select…")) +
+        field("Qty", '<input type="number" min="1" step="1" data-f="qty" value="1" data-default="1">') +
+        field("Date needed", '<input type="date" data-f="date" value="' + todayISO() + '" data-default="' + todayISO() + '">') +
+        field("Total " + cur(), '<input type="number" min="0" step="0.01" data-f="total" placeholder="auto" data-enter>') +
+        '<button class="btn" data-act="addOrder" data-submit>Add</button>' +
+      '</div>' +
+      '<p class="hint" style="margin:10px 0 0">Leave the total blank to use the product&rsquo;s suggested price × quantity.</p>' +
+    '</section>' +
+
+    '<div class="kanban mb">' + cols + '</div>' +
+
+    '<section class="card">' +
+      '<div class="row between" style="margin-bottom:14px">' +
+        '<div class="card-title" style="margin:0">All orders</div>' +
+        '<div class="row">' +
+          '<input placeholder="Search…" value="' + esc(ui.q || "") + '" data-change="searchOrders" style="width:180px">' +
+          '<div class="seg">' + ["all"].concat(STATUSES).map(s =>
+            '<button data-act="filterOrders" data-value="' + s + '" aria-pressed="' + (filter === s ? "true" : "false") + '">' +
+            (s === "all" ? "All" : STATUS_LABEL[s]) + '</button>').join("") + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="table-wrap">' +
+        '<div class="thead" style="grid-template-columns:' + cols5 + '"><span>Customer</span><span>Product</span><span>Qty</span><span>Date</span><span>Total</span><span>Status</span><span></span></div>' +
+        (rows.length ? rows.map(o =>
+          '<div class="trow clickable" style="grid-template-columns:' + cols5 + '" data-act="openOrder" data-id="' + o.id + '">' +
+            '<span class="strong">' + esc(customerName(o.customerId)) + '</span>' +
+            '<span class="muted">' + esc(productName(o.productId)) + '</span>' +
+            '<span class="muted num">' + esc(o.qty || 1) + '</span>' +
+            '<span class="muted">' + fmtDate(o.date) + '</span>' +
+            '<span class="strong num">' + money(o.total) + '</span>' +
+            '<span>' + pill(STATUS_LABEL[o.status], STATUS_TONE[o.status]) + '</span>' +
+            '<span class="row" style="gap:2px;flex-wrap:nowrap">' +
+              '<button class="icon-btn" style="color:var(--accent)" data-act="printQuote" data-id="' + o.id + '" title="Print quote / invoice">&#9113;</button>' +
+              delBtn("deleteOrder", o.id, "Delete order") +
+            '</span>' +
+          '</div>').join("") : emptyRow("No orders match. Add one above.")) +
+      '</div>' +
+    '</section>';
+};
+
+/** Order detail dialog — edit everything about one order. */
+function openOrderModal(id) {
+  const o = db.orders.find(x => x.id === id);
+  if (!o) return;
+  const bal = orderBalance(o);
+  modal(customerName(o.customerId), productName(o.productId) + " · " + fmtLongDate(o.date),
+    '<div data-form="editOrder" data-id="' + o.id + '">' +
+      '<div class="form-grid" style="grid-template-columns:1fr 1fr">' +
+        field("Customer", selectOf("customerId", customerOptions(), o.customerId)) +
+        field("Product", selectOf("productId", productOptions(), o.productId)) +
+        field("Quantity", '<input type="number" min="1" step="1" data-f="qty" value="' + esc(o.qty || 1) + '">') +
+        field("Date needed", '<input type="date" data-f="date" value="' + esc(o.date) + '">') +
+        field("Total " + cur(), '<input type="number" min="0" step="0.01" data-f="total" value="' + esc(o.total) + '">') +
+        field("Deposit paid " + cur(), '<input type="number" min="0" step="0.01" data-f="deposit" value="' + esc(o.deposit) + '">') +
+        field("Status", selectOf("status", STATUSES.map(s => ({ value: s, label: STATUS_LABEL[s] })), o.status)) +
+        field("Balance", '<input value="' + money(bal) + '" disabled>') +
+      '</div>' +
+      field("Notes", '<textarea data-f="notes" rows="3" placeholder="Flavour, inscription, delivery details…">' + esc(o.notes) + '</textarea>') +
+      '<div class="row" style="margin-top:14px">' +
+        '<button class="btn ghost sm" data-act="printQuote" data-id="' + o.id + '">Print quote</button>' +
+        '<button class="btn ghost sm" data-act="printInvoice" data-id="' + o.id + '">Print invoice</button>' +
+        (bal > 0 ? '<button class="btn ghost sm" data-act="markPaid" data-id="' + o.id + '">Mark fully paid</button>' : "") +
+      '</div>' +
+    '</div>',
+    [{ label: "Delete", act: "deleteOrder", cls: "danger", data: ' data-id="' + o.id + '"' },
+     { label: "Cancel", act: "closeModal" },
+     { label: "Save changes", act: "saveOrder", cls: "", data: ' data-id="' + o.id + '"' }]);
+}
+
+/* ============================================================
+   Module: Customers
+   ============================================================ */
+VIEWS.customers = function () {
+  const stats = c => {
+    const list = db.orders.filter(o => o.customerId === c.id);
+    return { list, count: list.length, spend: sum(list.filter(o => o.status === "paid"), o => num(o.total)) };
+  };
+  const rows = db.customers
+    .map(c => Object.assign({ c }, stats(c)))
+    .sort((a, b) => b.spend - a.spend);
+  const grid = "1.5fr 1.6fr 1fr .7fr 1fr 40px";
+
+  return header("Customers", "Lifetime value, tracked automatically.") +
+    '<section class="card mb" data-form="customer">' +
+      '<div class="card-title">Add customer</div>' +
+      '<div class="form-grid" style="grid-template-columns:1.3fr 1.5fr 1fr auto">' +
+        field("Name", input("name", 'placeholder="Maria Torres" data-enter')) +
+        field("Email", input("email", 'type="email" placeholder="maria@example.com"')) +
+        field("Phone", input("phone", 'placeholder="555-0142"')) +
+        '<button class="btn" data-act="addCustomer" data-submit>Add</button>' +
+      '</div>' +
+    '</section>' +
+    '<section class="card"><div class="table-wrap">' +
+      '<div class="thead" style="grid-template-columns:' + grid + '"><span>Name</span><span>Email</span><span>Phone</span><span>Orders</span><span>Lifetime spend</span><span></span></div>' +
+      (rows.length ? rows.map(r => {
+        const open = ui.openCustomer === r.c.id;
+        return '<div>' +
+          '<div class="trow clickable" style="grid-template-columns:' + grid + '" data-act="toggleCustomer" data-id="' + r.c.id + '">' +
+            '<span class="strong">' + esc(r.c.name) + '</span>' +
+            '<span class="muted">' + esc(r.c.email || "—") + '</span>' +
+            '<span class="muted">' + esc(r.c.phone || "—") + '</span>' +
+            '<span class="muted num">' + r.count + '</span>' +
+            '<span class="strong num">' + money(r.spend) + '</span>' +
+            '<span>' + delBtn("deleteCustomer", r.c.id, "Delete customer") + '</span>' +
+          '</div>' +
+          (open ? '<div style="background:var(--bg);border-radius:10px;padding:16px 18px;margin:8px 0">' +
+            '<div class="row between" style="margin-bottom:10px">' +
+              '<span class="hint strong">ORDER HISTORY</span>' +
+              '<button class="btn ghost sm" data-act="editCustomer" data-id="' + r.c.id + '">Edit details</button>' +
+            '</div>' +
+            (r.c.notes ? '<p class="muted" style="margin:0 0 10px">' + esc(r.c.notes) + '</p>' : "") +
+            (r.list.length ? r.list.sort((a, b) => b.date.localeCompare(a.date)).map(o =>
+              '<div class="row between" style="padding:6px 0;font-size:14px">' +
+                '<span>' + esc(productName(o.productId)) + (num(o.qty) > 1 ? " ×" + o.qty : "") + ' — ' + money(o.total) + '</span>' +
+                '<span class="muted">' + fmtDate(o.date) + ' · ' + STATUS_LABEL[o.status] + '</span></div>').join("")
+              : '<p class="hint" style="margin:0">No orders yet.</p>') +
+          '</div>' : "") +
+        '</div>';
+      }).join("") : emptyRow("No customers yet — add your first above.")) +
+    '</div></section>';
+};
+
+function openCustomerModal(id) {
+  const c = customerById(id);
+  if (!c) return;
+  modal("Edit customer", c.name,
+    '<div data-form="editCustomer">' +
+      '<div class="form-grid" style="grid-template-columns:1fr 1fr">' +
+        field("Name", '<input data-f="name" value="' + esc(c.name) + '">') +
+        field("Email", '<input type="email" data-f="email" value="' + esc(c.email || "") + '">') +
+        field("Phone", '<input data-f="phone" value="' + esc(c.phone || "") + '">') +
+      '</div>' +
+      field("Notes", '<textarea data-f="notes" rows="3" placeholder="Allergies, preferences, delivery quirks…">' + esc(c.notes || "") + '</textarea>') +
+    '</div>',
+    [{ label: "Cancel", act: "closeModal" }, { label: "Save", act: "saveCustomer", cls: "", data: ' data-id="' + c.id + '"' }]);
+}
+</script>
+<script>
+/* ============================================================
+   Module: Products, recipe costing & allergens
+   ============================================================ */
+VIEWS.products = function () {
+  const grid = "1.6fr .9fr .9fr .9fr .8fr 96px";
+  const agrid = "1.6fr repeat(" + ALLERGENS.length + ",1fr)";
+  const sold = id => sum(db.orders.filter(o => o.productId === id && isRevenue(o)), o => num(o.qty || 1));
+
+  return header("Products, recipe costing & allergens", "Know your cost before you bake.") +
+    '<section class="card mb" data-form="product">' +
+      '<div class="card-title">Add product / recipe</div>' +
+      '<div class="form-grid" style="grid-template-columns:1.6fr 1.2fr repeat(4,.9fr)">' +
+        field("Product name", input("name", 'placeholder="Classic Vanilla Cake" data-enter')) +
+        field("Category", input("category", 'placeholder="Custom cakes" list="bbos-categories"')) +
+        field("Ingredients " + cur(), input("ingCost", 'type="number" min="0" step="0.01" placeholder="0.00"')) +
+        field("Labour " + cur(), input("labour", 'type="number" min="0" step="0.01" placeholder="0.00"')) +
+        field("Overhead " + cur(), input("overhead", 'type="number" min="0" step="0.01" placeholder="0.00"')) +
+        field("Margin %", input("margin", 'type="number" min="0" max="95" step="1" value="' + esc(db.settings.defaultMargin) + '" data-default="' + esc(db.settings.defaultMargin) + '"')) +
+      '</div>' +
+      '<datalist id="bbos-categories">' + [...new Set(db.products.map(p => p.category).filter(Boolean))].map(c => '<option value="' + esc(c) + '">').join("") + '</datalist>' +
+      '<div class="row" style="margin:14px 0 4px"><span class="hint">Allergens:</span>' +
+        ALLERGENS.map(a => '<label class="checkbox"><input type="checkbox" data-f="' + esc(a) + '" data-group="allergens">' + esc(a) + '</label>').join("") +
+      '</div>' +
+      '<div class="row between" style="margin-top:14px">' +
+        '<span class="hint">Price is calculated for you from the formula below.</span>' +
+        '<button class="btn" data-act="addProduct" data-submit>Add product</button>' +
+      '</div>' +
+    '</section>' +
+
+    '<div class="formula mb">price = (ingredients + labour + overhead) &divide; (1 &minus; margin %)</div>' +
+
+    '<section class="card mb"><div class="card-title">Products</div><div class="table-wrap">' +
+      '<div class="thead" style="grid-template-columns:' + grid + '"><span>Product</span><span>Unit cost</span><span>Price</span><span>Profit</span><span>Sold</span><span></span></div>' +
+      (db.products.length ? db.products.map(p => {
+        const c = costing(p);
+        return '<div class="trow" style="grid-template-columns:' + grid + '">' +
+          '<span><span class="strong">' + esc(p.name) + '</span>' + (p.category ? '<br><span class="hint">' + esc(p.category) + '</span>' : "") + '</span>' +
+          '<span class="muted num">' + money(c.cost) + '</span>' +
+          '<span class="strong num">' + money(c.price) + '</span>' +
+          '<span class="strong num" style="color:var(--green)">' + money(c.profit) + ' <span class="hint">(' + Math.round(c.marginPct) + '%)</span></span>' +
+          '<span class="muted num">' + sold(p.id) + '</span>' +
+          '<span class="row" style="gap:2px;flex-wrap:nowrap">' +
+            '<button class="btn ghost sm" data-act="editProduct" data-id="' + p.id + '">Edit</button>' +
+            delBtn("deleteProduct", p.id, "Delete product") +
+          '</span>' +
+        '</div>';
+      }).join("") : emptyRow("No products yet — add your first recipe above.")) +
+    '</div></section>' +
+
+    '<div class="grid wide-narrow">' +
+      card("Allergen matrix",
+        '<div class="table-wrap">' +
+          '<div class="thead" style="grid-template-columns:' + agrid + '"><span>Product</span>' +
+            ALLERGENS.map(a => '<span style="text-align:center">' + esc(a) + '</span>').join("") + '</div>' +
+          (db.products.length ? db.products.map(p =>
+            '<div class="trow" style="grid-template-columns:' + agrid + '">' +
+              '<span class="strong">' + esc(p.name) + '</span>' +
+              ALLERGENS.map(a => (p.allergens || []).includes(a)
+                ? '<span style="text-align:center;color:var(--red);font-weight:700" title="Contains ' + esc(a) + '">&#9679;</span>'
+                : '<span style="text-align:center;color:var(--ink-45)">&mdash;</span>').join("") +
+            '</div>').join("") : emptyRow("Add a product to build your matrix.")) +
+        '</div>' +
+        '<p class="hint" style="margin:14px 0 0">Set an allergen once — it flows to every order, bake sheet and printed label.</p>') +
+      card("Print allergen labels",
+        '<p class="hint" style="margin-top:0">Ready-to-cut labels with product name, weight and a CONTAINS line — for market stalls and boxes.</p>' +
+        '<div data-form="labels" class="stack" style="gap:10px">' +
+          field("Product", selectOf("productId", productOptions(), "", "All products")) +
+          field("Net weight (optional)", input("weight", 'placeholder="120g"')) +
+          field("Labels per product", input("copies", 'type="number" min="1" max="40" value="6"')) +
+          '<button class="btn block" data-act="printLabels">Print labels</button>' +
+        '</div>') +
+    '</div>';
+};
+
+function openProductModal(id) {
+  const p = productById(id);
+  if (!p) return;
+  const c = costing(p);
+  modal("Edit product", p.name,
+    '<div data-form="editProduct">' +
+      '<div class="form-grid" style="grid-template-columns:1fr 1fr">' +
+        field("Name", '<input data-f="name" value="' + esc(p.name) + '">') +
+        field("Category", '<input data-f="category" value="' + esc(p.category || "") + '">') +
+        field("Ingredients " + cur(), '<input type="number" min="0" step="0.01" data-f="ingCost" value="' + esc(p.ingCost) + '">') +
+        field("Labour " + cur(), '<input type="number" min="0" step="0.01" data-f="labour" value="' + esc(p.labour) + '">') +
+        field("Overhead " + cur(), '<input type="number" min="0" step="0.01" data-f="overhead" value="' + esc(p.overhead) + '">') +
+        field("Margin %", '<input type="number" min="0" max="95" step="1" data-f="margin" value="' + esc(p.margin) + '">') +
+      '</div>' +
+      '<div class="row" style="margin:14px 0"><span class="hint">Allergens:</span>' +
+        ALLERGENS.map(a => '<label class="checkbox"><input type="checkbox" data-f="' + esc(a) + '" data-group="allergens"' +
+          ((p.allergens || []).includes(a) ? " checked" : "") + '>' + esc(a) + '</label>').join("") + '</div>' +
+      '<div class="alert green" style="justify-content:space-between">' +
+        '<span>Current: cost ' + money(c.cost) + ' · price ' + money(c.price) + ' · profit ' + money(c.profit) + '</span></div>' +
+    '</div>',
+    [{ label: "Cancel", act: "closeModal" }, { label: "Save", act: "saveProduct", cls: "", data: ' data-id="' + p.id + '"' }]);
+}
+
+/* ============================================================
+   Module: Inventory
+   ============================================================ */
+VIEWS.inventory = function () {
+  const grid = "1.5fr .9fr 1fr 1.3fr 40px";
+  const low = lowStock();
+  const rows = db.ingredients.slice().sort((a, b) => {
+    const rank = { expired: 0, expiring: 1, out: 2, low: 3, good: 4 };
+    return rank[ingredientStatus(a).key] - rank[ingredientStatus(b).key];
+  });
+
+  return header("Inventory", "Never run out mid-order.") +
+    '<section class="card mb" data-form="ingredient">' +
+      '<div class="card-title">Add ingredient</div>' +
+      '<div class="form-grid" style="grid-template-columns:1.5fr .8fr .8fr .8fr .9fr 1fr auto">' +
+        field("Ingredient", input("name", 'placeholder="Cake flour" data-enter')) +
+        field("Unit", '<select data-f="unit"><option>kg</option><option>g</option><option>L</option><option>ml</option><option>units</option></select>') +
+        field("In stock", input("stock", 'type="number" min="0" step="0.01" placeholder="0"')) +
+        field("Reorder at", input("reorder", 'type="number" min="0" step="0.01" placeholder="0"')) +
+        field("Cost per unit " + cur(), input("cost", 'type="number" min="0" step="0.01" placeholder="0.00"')) +
+        field("Expiry", '<input type="date" data-f="expiry">') +
+        '<button class="btn" data-act="addIngredient" data-submit>Add</button>' +
+      '</div>' +
+    '</section>' +
+
+    '<div class="grid wide-narrow">' +
+      '<section class="card"><div class="table-wrap">' +
+        '<div class="thead" style="grid-template-columns:' + grid + '"><span>Ingredient</span><span>In stock</span><span>Expires</span><span>Status</span><span></span></div>' +
+        (rows.length ? rows.map(i => {
+          const s = ingredientStatus(i);
+          const days = i.expiry ? daysUntil(i.expiry) : null;
+          return '<div class="trow" style="grid-template-columns:' + grid + '">' +
+            '<span><span class="strong">' + esc(i.name) + '</span><br><span class="hint">' + money(num(i.cost)) + ' / ' + esc(i.unit) + '</span></span>' +
+            '<span class="num"><button class="icon-btn" style="color:var(--ink-45)" data-act="adjustStock" data-id="' + i.id + '" data-by="-1" aria-label="Decrease">&minus;</button> ' +
+              esc(num(i.stock)) + ' ' + esc(i.unit) +
+              ' <button class="icon-btn" style="color:var(--ink-45)" data-act="adjustStock" data-id="' + i.id + '" data-by="1" aria-label="Increase">+</button></span>' +
+            '<span class="muted" style="font-size:12.5px">' + (i.expiry ? fmtDate(i.expiry) + '<br><span class="hint">' +
+              (days < 0 ? Math.abs(days) + "d ago" : days + "d left") + '</span>' : "—") + '</span>' +
+            '<span>' + pill(s.label, s.tone) +
+              (["low", "out"].includes(s.key) ? '<div class="hint" style="color:var(--amber);margin-top:3px">Reorder ' +
+                Math.max(1, Math.ceil(num(i.reorder) * 2 - num(i.stock))) + ' ' + esc(i.unit) + '</div>' : "") + '</span>' +
+            '<span>' + delBtn("deleteIngredient", i.id, "Delete ingredient") + '</span>' +
+          '</div>';
+        }).join("") : emptyRow("No ingredients tracked yet.")) +
+      '</div></section>' +
+      '<div class="stack">' +
+        '<section class="card dark">' +
+          '<div style="color:var(--accent);font-weight:700;font-size:13px;letter-spacing:.06em">STOCK VALUE</div>' +
+          '<div style="font-size:32px;font-weight:800;margin-top:6px" class="num">' + money0(stockValue()) + '</div>' +
+          '<div style="opacity:.6;font-size:13px;margin-top:4px">' + db.ingredients.length + ' ingredients tracked</div>' +
+        '</section>' +
+        card("Shopping list",
+          '<p class="muted" style="margin:0 0 12px">' + low.length + ' item' + (low.length === 1 ? "" : "s") + ' below reorder level.</p>' +
+          (low.length ? '<div style="margin-bottom:12px">' + low.map(i =>
+            '<div class="row between" style="padding:5px 0;font-size:14px"><span>' + esc(i.name) + '</span>' +
+            '<span class="muted">' + esc(num(i.stock)) + " / " + esc(num(i.reorder)) + ' ' + esc(i.unit) + '</span></div>').join("") + '</div>' : "") +
+          '<button class="btn ghost block" data-act="printShoppingList">Print shopping list</button>') +
+        card("Expiring within 14 days",
+          expiringSoon().length ? expiringSoon().map(i =>
+            '<div class="alert red" style="margin-bottom:8px"><span class="dot"></span>' + esc(i.name) + ' · ' + fmtDate(i.expiry) + '</div>').join("")
+            : '<div class="alert green"><span class="dot"></span>Nothing expiring soon.</div>') +
+      '</div>' +
+    '</div>';
+};
+
+/* ============================================================
+   Module: Payments, expenses & P&L
+   ============================================================ */
+VIEWS.payments = function () {
+  const totalReceived = sum(db.orders, received);
+  const totalOutstanding = sum(db.orders, outstanding);
+  const expected = sum(db.orders.filter(o => ["quoted", "enquiry"].includes(o.status)), o => num(o.total));
+  const totalExpenses = sum(db.expenses, e => num(e.amount));
+  const months = lastMonths(6);
+  const net = totalReceived - totalExpenses;
+  const grid = "1.6fr 1.2fr 1fr .9fr 40px";
+
+  const stat = (label, value, color) =>
+    '<div class="card"><div class="kpi-label">' + esc(label) + '</div>' +
+    '<div class="num" style="font-size:26px;font-weight:700;margin-top:6px' + (color ? ";color:" + color : "") + '">' + esc(value) + '</div></div>';
+
+  return header("Payments, expenses & P&L", "Know exactly how the business is doing.") +
+    '<div class="grid kpis mb">' +
+      stat("Received", money0(totalReceived), "var(--green)") +
+      stat("Outstanding", money0(totalOutstanding), "var(--amber)") +
+      stat("Expected (enquiries + quotes)", money0(expected)) +
+      stat("Total expenses", money0(totalExpenses), "var(--red)") +
+      '<div class="card dark"><div style="opacity:.6;font-size:14px">Net profit</div>' +
+        '<div class="num" style="color:var(--accent);font-size:26px;font-weight:800;margin-top:6px">' + money0(net) + '</div></div>' +
+    '</div>' +
+
+    '<section class="card mb">' +
+      '<div class="row between" style="margin-bottom:16px">' +
+        '<div class="card-title" style="margin:0">Monthly revenue vs profit</div>' +
+        '<div class="legend"><span><i class="swatch"></i>Revenue</span><span><i class="swatch ink"></i>Profit</span></div>' +
+      '</div>' +
+      barChart(months.map(m => ({ label: m.label, values: [
+        { v: Math.max(0, m.revenue), title: "Revenue " + money(m.revenue) },
+        { v: Math.max(0, m.profit), cls: "ink", title: "Profit " + money(m.profit) }
+      ] })), 200) +
+      '<div class="row between" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">' +
+        '<span class="hint">Profit = revenue &minus; expenses &minus; ingredient cost of goods sold</span>' +
+        '<button class="btn ghost sm" data-act="printPL">Print profit &amp; loss</button>' +
+      '</div>' +
+    '</section>' +
+
+    '<div class="grid wide-narrow">' +
+      '<section class="card" data-form="expense">' +
+        '<div class="card-title">Expenses</div>' +
+        '<div class="form-grid" style="grid-template-columns:1.5fr .9fr 1fr auto;margin-bottom:16px">' +
+          field("Category", input("category", 'placeholder="Packaging" list="bbos-expcats" data-enter')) +
+          field("Amount " + cur(), input("amount", 'type="number" min="0" step="0.01" placeholder="0.00"')) +
+          field("Date", '<input type="date" data-f="date" value="' + todayISO() + '" data-default="' + todayISO() + '">') +
+          '<button class="btn" data-act="addExpense" data-submit>Add</button>' +
+        '</div>' +
+        '<datalist id="bbos-expcats">' + [...new Set(db.expenses.map(e => e.category))].map(c => '<option value="' + esc(c) + '">').join("") + '</datalist>' +
+        '<div class="table-wrap">' +
+          '<div class="thead" style="grid-template-columns:' + grid + '"><span>Category</span><span>Notes</span><span>Date</span><span>Amount</span><span></span></div>' +
+          (db.expenses.length ? db.expenses.slice().sort((a, b) => b.date.localeCompare(a.date)).map(e =>
+            '<div class="trow" style="grid-template-columns:' + grid + '">' +
+              '<span class="strong">' + esc(e.category) + '</span>' +
+              '<span class="muted">' + esc(e.notes || "—") + '</span>' +
+              '<span class="muted">' + fmtDate(e.date) + '</span>' +
+              '<span class="strong num" style="color:var(--red)">' + money(e.amount) + '</span>' +
+              '<span>' + delBtn("deleteExpense", e.id, "Delete expense") + '</span>' +
+            '</div>').join("") : emptyRow("No expenses logged yet.")) +
+        '</div>' +
+      '</section>' +
+      '<div class="stack">' +
+        card("Awaiting payment",
+          (() => {
+            const owed = db.orders.filter(o => outstanding(o) > 0).sort((a, b) => a.date.localeCompare(b.date));
+            return owed.length ? owed.map(o =>
+              '<div class="row between" style="padding:9px 0;border-bottom:1px solid var(--line)">' +
+                '<span><span class="strong">' + esc(customerName(o.customerId)) + '</span><br><span class="hint">' + fmtDate(o.date) +
+                  (daysUntil(o.date) < 0 ? ' · overdue' : "") + '</span></span>' +
+                '<span class="row" style="flex-wrap:nowrap"><span class="strong num">' + money(orderBalance(o)) + '</span>' +
+                '<button class="btn ghost sm" data-act="markPaid" data-id="' + o.id + '">Paid</button></span>' +
+              '</div>').join("") : '<div class="alert green"><span class="dot"></span>Everything is settled.</div>';
+          })()) +
+        card("This month",
+          (() => { const m = monthStats(todayISO().slice(0, 7)); return '' +
+            '<div class="row between" style="padding:6px 0"><span class="muted">Revenue</span><span class="strong num">' + money(m.revenue) + '</span></div>' +
+            '<div class="row between" style="padding:6px 0"><span class="muted">Cost of goods</span><span class="num">' + money(m.ingredientCost) + '</span></div>' +
+            '<div class="row between" style="padding:6px 0"><span class="muted">Expenses</span><span class="num">' + money(m.expenses) + '</span></div>' +
+            '<div class="row between" style="padding:10px 0 0;border-top:1px solid var(--line);margin-top:6px">' +
+              '<span class="strong">Net profit</span><span class="strong num" style="color:var(--accent)">' + money(m.profit) + '</span></div>'; })()) +
+      '</div>' +
+    '</div>';
+};
+</script>
+<script>
+/* ============================================================
+   Module: Tasks, bake log, waste & social
+   ============================================================ */
+VIEWS.kitchen = function () {
+  const tasks = db.tasks.slice().sort((a, b) => (a.done - b.done) || String(a.due || "").localeCompare(String(b.due || "")));
+  const wasteCost = sum(db.waste, w => num(w.cost));
+
+  return header("Tasks, bake log, waste & social", "Everything that keeps the kitchen running.") +
+    '<div class="grid two mb">' +
+      '<section class="card" data-form="task">' +
+        '<div class="card-title">Tasks</div>' +
+        '<div class="form-grid" style="grid-template-columns:2fr 1fr auto;margin-bottom:14px">' +
+          field("Task", input("text", 'placeholder="Restock vanilla extract" data-enter')) +
+          field("Due", '<input type="date" data-f="due">') +
+          '<button class="btn" data-act="addTask" data-submit>Add</button>' +
+        '</div>' +
+        (tasks.length ? tasks.map(t => {
+          const overdue = !t.done && t.due && daysUntil(t.due) < 0;
+          return '<div class="row" style="padding:9px 0;border-bottom:1px solid var(--line);flex-wrap:nowrap">' +
+            '<span class="check' + (t.done ? " on" : "") + '" data-act="toggleTask" data-id="' + t.id + '" role="checkbox" aria-checked="' + t.done + '" tabindex="0">' + (t.done ? "&#10003;" : "") + '</span>' +
+            '<span style="flex:1;font-size:14.5px" class="' + (t.done ? "done" : "") + '">' + esc(t.text) + '</span>' +
+            (t.due ? '<span class="hint"' + (overdue ? ' style="color:var(--red);font-weight:600"' : "") + '>' + fmtDate(t.due) + '</span>' : "") +
+            delBtn("deleteTask", t.id, "Delete task") +
+          '</div>';
+        }).join("") : emptyRow("Nothing on the list. Rare and precious.")) +
+      '</section>' +
+
+      '<section class="card" data-form="bake">' +
+        '<div class="card-title">Bake log</div>' +
+        '<div class="form-grid" style="grid-template-columns:2fr .7fr auto;margin-bottom:6px">' +
+          field("Product", selectOf("productId", productOptions(), "", "Select product…")) +
+          field("Batches", input("qty", 'type="number" min="1" step="1" value="1" data-default="1"')) +
+          '<button class="btn" data-act="addBake" data-submit>Log bake</button>' +
+        '</div>' +
+        '<p class="hint" style="margin:0 0 14px">Logging a bake records what came out of the oven and when.</p>' +
+        (db.bakes.length ? db.bakes.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12).map(b =>
+          '<div class="row between" style="padding:9px 0;border-bottom:1px solid var(--line)">' +
+            '<span style="font-size:14px">' + esc(productName(b.productId)) + (num(b.qty) > 1 ? ' ×' + b.qty : "") + '</span>' +
+            '<span class="row" style="flex-wrap:nowrap"><span class="hint">' + fmtDate(b.date) + '</span>' + delBtn("deleteBake", b.id, "Delete bake") + '</span>' +
+          '</div>').join("") : emptyRow("No bakes logged yet.")) +
+      '</section>' +
+    '</div>' +
+
+    '<div class="grid two">' +
+      '<section class="card" data-form="waste">' +
+        '<div class="row between" style="margin-bottom:14px">' +
+          '<div class="card-title" style="margin:0">Waste tracking</div>' +
+          '<span class="pill red">' + money(wasteCost) + ' wasted</span>' +
+        '</div>' +
+        '<div class="form-grid" style="grid-template-columns:1.3fr .7fr 1.2fr .7fr auto;margin-bottom:14px">' +
+          field("Item", input("item", 'placeholder="Sponge trimmings" data-enter')) +
+          field("Qty", input("qty", 'placeholder="0.4 kg"')) +
+          field("Reason", input("reason", 'placeholder="Over-baked"')) +
+          field("Cost " + cur(), input("cost", 'type="number" min="0" step="0.01" placeholder="0.00"')) +
+          '<button class="btn" data-act="addWaste" data-submit>Add</button>' +
+        '</div>' +
+        (db.waste.length ? db.waste.slice().sort((a, b) => b.date.localeCompare(a.date)).map(w =>
+          '<div class="row between" style="padding:8px 0;border-bottom:1px solid var(--line)">' +
+            '<span style="font-size:14px">' + esc(w.item) + (w.qty ? ' · ' + esc(w.qty) : "") + '</span>' +
+            '<span class="row" style="flex-wrap:nowrap"><span class="hint">' + esc(w.reason || "") + '</span>' +
+              '<span class="strong num" style="color:var(--red)">' + money(w.cost) + '</span>' + delBtn("deleteWaste", w.id, "Delete entry") + '</span>' +
+          '</div>').join("") : emptyRow("No waste logged — nicely done.")) +
+      '</section>' +
+
+      '<section class="card" data-form="social">' +
+        '<div class="card-title">Social planner</div>' +
+        '<div class="form-grid" style="grid-template-columns:2fr 1fr 1fr auto;margin-bottom:14px">' +
+          field("Caption idea", input("caption", 'placeholder="Behind the scenes: Maria\'s cake" data-enter')) +
+          field("Channel", '<select data-f="channel"><option>Instagram</option><option>Facebook</option><option>TikTok</option><option>Email</option></select>') +
+          field("Date", '<input type="date" data-f="date" value="' + todayISO() + '" data-default="' + todayISO() + '">') +
+          '<button class="btn" data-act="addSocial" data-submit>Add</button>' +
+        '</div>' +
+        (db.social.length ? db.social.slice().sort((a, b) => a.date.localeCompare(b.date)).map(s =>
+          '<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:nowrap">' +
+            '<span class="check' + (s.done ? " on" : "") + '" data-act="toggleSocial" data-id="' + s.id + '" role="checkbox" aria-checked="' + s.done + '" tabindex="0">' + (s.done ? "&#10003;" : "") + '</span>' +
+            '<span style="flex:1;font-size:14px" class="' + (s.done ? "done" : "") + '">' + esc(s.caption) + '</span>' +
+            '<span class="hint">' + esc(s.channel || "") + ' · ' + fmtDate(s.date) + '</span>' +
+            delBtn("deleteSocial", s.id, "Delete post") +
+          '</div>').join("") : emptyRow("No posts planned.")) +
+      '</section>' +
+    '</div>';
+};
+
+/* ============================================================
+   Module: Settings & backup
+   ============================================================ */
+VIEWS.settings = function () {
+  const s = db.settings;
+  const counts = [
+    ["Orders", db.orders.length], ["Customers", db.customers.length], ["Products", db.products.length],
+    ["Ingredients", db.ingredients.length], ["Expenses", db.expenses.length], ["Tasks", db.tasks.length],
+    ["Bakes", db.bakes.length], ["Waste entries", db.waste.length], ["Social posts", db.social.length]
+  ];
+  return header("Settings & backup", "Your data is stored only on this device.") +
+    '<div class="grid two mb">' +
+      '<section class="card" data-form="settings">' +
+        '<div class="card-title">Bakery details</div>' +
+        '<p class="hint" style="margin:-8px 0 14px">These appear on every quote, invoice and bake sheet you print.</p>' +
+        '<div class="form-grid" style="grid-template-columns:1fr 1fr">' +
+          field("Bakery name", '<input data-f="bakeryName" value="' + esc(s.bakeryName) + '">') +
+          field("Your name", '<input data-f="ownerName" value="' + esc(s.ownerName || "") + '" placeholder="Baker">') +
+          field("Email", '<input type="email" data-f="email" value="' + esc(s.email || "") + '">') +
+          field("Phone", '<input data-f="phone" value="' + esc(s.phone || "") + '">') +
+          field("Address", '<input data-f="address" value="' + esc(s.address || "") + '">') +
+          field("Currency symbol", '<input data-f="currency" maxlength="3" value="' + esc(s.currency) + '">') +
+        '</div>' +
+        field("Terms printed on documents", '<textarea data-f="terms" rows="2">' + esc(s.terms || "") + '</textarea>') +
+        '<div class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:10px">' +
+          field("Monthly goal " + cur(), '<input type="number" min="0" step="50" data-f="monthlyGoal" value="' + esc(s.monthlyGoal) + '">') +
+          field("Default margin %", '<input type="number" min="0" max="95" data-f="defaultMargin" value="' + esc(s.defaultMargin) + '">') +
+          field("Deposit %", '<input type="number" min="0" max="100" data-f="depositPct" value="' + esc(s.depositPct) + '">') +
+          field("Quote valid (days)", '<input type="number" min="1" max="365" data-f="quoteValidDays" value="' + esc(s.quoteValidDays) + '">') +
+        '</div>' +
+        '<div class="row" style="margin-top:16px"><button class="btn" data-act="saveSettings">Save settings</button></div>' +
+      '</section>' +
+
+      '<div class="stack">' +
+        card("Backup & restore",
+          '<p class="muted" style="margin:0 0 4px">Your data auto-saves on this device as you work. Download a backup file for safekeeping, or restore one on a new computer.</p>' +
+          '<p class="hint" style="margin:0 0 14px">Last backup: ' + (db.meta.lastBackup ? fmtLongDate(db.meta.lastBackup) : "never") + '</p>' +
+          '<div class="row">' +
+            '<button class="btn" data-act="exportBackup">Export backup (.json)</button>' +
+            '<label class="btn neutral" style="cursor:pointer">Import backup<input type="file" accept="application/json,.json" data-change="importBackup" style="display:none"></label>' +
+          '</div>') +
+        card("Exports",
+          '<p class="muted" style="margin:0 0 14px">Take your data anywhere — nothing is locked in.</p>' +
+          '<div class="stack" style="gap:8px">' +
+            '<button class="btn ghost block" data-act="exportWorkbook">Full workbook (all sheets, .xls)</button>' +
+            '<button class="btn ghost block" data-act="exportCsv" data-table="orders">Orders (.csv)</button>' +
+            '<button class="btn ghost block" data-act="exportCsv" data-table="customers">Customers (.csv)</button>' +
+            '<button class="btn ghost block" data-act="printPL">Profit &amp; loss (PDF)</button>' +
+          '</div>') +
+      '</div>' +
+    '</div>' +
+
+    '<div class="grid two">' +
+      card("What&rsquo;s stored",
+        '<div class="grid" style="grid-template-columns:1fr 1fr;gap:6px 18px">' +
+          counts.map(([k, v]) => '<div class="row between" style="padding:4px 0"><span class="muted">' + esc(k) + '</span><span class="strong num">' + v + '</span></div>').join("") +
+        '</div>' +
+        '<p class="hint" style="margin:14px 0 0">No account, no server, no internet required. Clearing your browser data for this file will erase it — keep a backup.</p>') +
+      card("Start fresh",
+        '<p class="muted" style="margin:0 0 14px">' + (db.meta.sample
+          ? "You&rsquo;re exploring the sample bakery. Clear it when you&rsquo;re ready to enter your own."
+          : "This will permanently delete everything stored on this device.") + '</p>' +
+        '<div class="row">' +
+          '<button class="btn danger" data-act="resetEmpty">Clear all data</button>' +
+          '<button class="btn neutral" data-act="resetSample">Reload sample data</button>' +
+        '</div>') +
+    '</div>';
+};
+</script>
+<script>
+/* ============================================================
+   Printable documents. Rendered into #print-root, then printed
+   by the browser — which is also how they become PDFs
+   ("Save as PDF" in the print dialog). No libraries needed.
+   ============================================================ */
+function printDocs(html) {
+  $("#print-root").innerHTML = html;
+  closeModal();
+  const done = () => { $("#print-root").innerHTML = ""; window.removeEventListener("afterprint", done); };
+  window.addEventListener("afterprint", done);
+  setTimeout(() => window.print(), 60);
+}
+
+function docHead(kicker, title, metaLines) {
+  const s = db.settings;
+  return '<div class="doc-head"><div>' +
+      '<div class="doc-kicker">' + esc(kicker) + '</div><h1>' + esc(title) + '</h1>' +
+      '<div class="muted" style="margin-top:6px">' + esc(s.bakeryName) + '</div>' +
+    '</div><div class="doc-meta">' +
+      metaLines.map(l => esc(l)).join("<br>") +
+      '<br>' + esc(s.email || "") + (s.phone ? "<br>" + esc(s.phone) : "") + (s.address ? "<br>" + esc(s.address) : "") +
+    '</div></div>';
+}
+
+function orderDoc(o, kind) {
+  const c = customerById(o.customerId) || { name: "—" };
+  const p = productById(o.productId);
+  const qty = num(o.qty) || 1;
+  const unit = num(o.total) / qty;
+  const isInvoice = kind === "invoice";
+  const dep = num(o.deposit), bal = orderBalance(o);
+  const ref = o.id.slice(-6).toUpperCase();
+  const meta = isInvoice
+    ? ["Invoice #" + ref, "Issued " + fmtLongDate(todayISO()), "Order date " + fmtLongDate(o.date)]
+    : ["Quote #" + ref, "Issued " + fmtLongDate(todayISO()), "Valid " + num(db.settings.quoteValidDays) + " days"];
+
+  return '<div class="doc">' + docHead(isInvoice ? "Invoice" : "Quote", c.name, meta) +
+    '<table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Unit</th><th class="r">Amount</th></tr></thead><tbody>' +
+      '<tr><td><strong>' + esc(productName(o.productId)) + '</strong>' +
+        (o.notes ? '<br><span style="font-size:12.5px;color:#6b5c4d">' + esc(o.notes) + '</span>' : "") +
+        (p && (p.allergens || []).length ? '<br><span style="font-size:11.5px;color:#C0483F;font-weight:700">CONTAINS: ' + esc(p.allergens.join(", ").toUpperCase()) + '</span>' : "") +
+      '</td><td class="r">' + qty + '</td><td class="r">' + money(unit) + '</td><td class="r">' + money(o.total) + '</td></tr>' +
+    '</tbody></table>' +
+    (isInvoice
+      ? '<div style="display:flex;justify-content:space-between;padding:8px 4px"><span>Deposit received</span><span>' + money(dep) + '</span></div>' +
+        '<div class="doc-total"><span>Balance due</span><span>' + money(bal) + '</span></div>'
+      : '<div style="display:flex;justify-content:space-between;padding:8px 4px"><span>Deposit to secure your date (' + num(db.settings.depositPct) + '%)</span><span>' +
+          money(num(o.total) * num(db.settings.depositPct) / 100) + '</span></div>' +
+        '<div class="doc-total"><span>Total</span><span>' + money(o.total) + '</span></div>') +
+    '<div class="doc-note">' + esc(db.settings.terms || "") +
+      (isInvoice && bal <= 0 ? '<br><strong style="color:#3F8A5C">Paid in full — thank you!</strong>' : "") +
+    '</div></div>';
+}
+
+function bakeSheetDoc(dateISO) {
+  const list = ordersOn(dateISO).filter(o => o.status !== "enquiry");
+  const rows = list.map(o => {
+    const p = productById(o.productId);
+    return '<tr><td><strong>' + esc(productName(o.productId)) + '</strong>' +
+      (p && (p.allergens || []).length ? '<br><span style="font-size:11.5px;color:#C0483F;font-weight:700">' + esc(p.allergens.join(", ").toUpperCase()) + '</span>' : "") +
+      '</td><td class="r">' + (num(o.qty) || 1) + '</td><td>' + esc(customerName(o.customerId)) + '</td>' +
+      '<td>' + esc(o.notes || "—") + '</td></tr>';
+  }).join("");
+  // Ingredients needed, rolled up from each product's recipe cost line.
+  return '<div class="doc">' + docHead("Kitchen bake sheet", fmtLongDate(dateISO), [list.length + " order" + (list.length === 1 ? "" : "s"), "Printed " + fmtLongDate(todayISO())]) +
+    (list.length
+      ? '<table><thead><tr><th>Product</th><th class="r">Qty</th><th>Customer</th><th>Notes</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<p class="muted">No orders scheduled for this day.</p>') +
+    '<div class="doc-note">Tick each item as it leaves the oven. Allergens are listed under every product — double-check before decorating.</div></div>';
+}
+
+function shoppingListDoc() {
+  const low = lowStock();
+  const exp = expiringSoon();
+  return '<div class="doc">' + docHead("Shopping list", db.settings.bakeryName, ["Printed " + fmtLongDate(todayISO()), low.length + " item" + (low.length === 1 ? "" : "s") + " to buy"]) +
+    (low.length ? '<table><thead><tr><th>Ingredient</th><th class="r">In stock</th><th class="r">Reorder at</th><th class="r">Suggested buy</th></tr></thead><tbody>' +
+      low.map(i => '<tr><td><strong>' + esc(i.name) + '</strong></td><td class="r">' + num(i.stock) + " " + esc(i.unit) +
+        '</td><td class="r">' + num(i.reorder) + " " + esc(i.unit) + '</td><td class="r"><strong>' +
+        Math.max(1, Math.ceil(num(i.reorder) * 2 - num(i.stock))) + " " + esc(i.unit) + '</strong></td></tr>').join("") +
+      '</tbody></table>' : '<p class="muted">Everything is above its reorder level.</p>') +
+    (exp.length ? '<h3 style="margin-top:26px;font-size:15px">Use up first — expiring soon</h3>' +
+      '<table><tbody>' + exp.map(i => '<tr><td>' + esc(i.name) + '</td><td class="r">' + fmtLongDate(i.expiry) + '</td></tr>').join("") + '</tbody></table>' : "") +
+    '<div class="doc-note">Estimated cost of this list: ' +
+      money(sum(low, i => Math.max(1, Math.ceil(num(i.reorder) * 2 - num(i.stock))) * num(i.cost))) + '</div></div>';
+}
+
+function labelsDoc(productId, weight, copies) {
+  const list = productId ? [productById(productId)].filter(Boolean) : db.products;
+  const n = clamp(parseInt(copies, 10) || 6, 1, 40);
+  let cells = "";
+  for (const p of list) {
+    for (let i = 0; i < n; i++) {
+      cells += '<div class="label-card" style="break-inside:avoid">' +
+        '<div style="font-weight:700;font-size:15px">' + esc(p.name) + '</div>' +
+        '<div style="font-size:11.5px;color:#6b5c4d;margin-top:2px">' + esc(db.settings.bakeryName) + (weight ? " · " + esc(weight) : "") + '</div>' +
+        '<div class="contains">' + ((p.allergens || []).length ? "CONTAINS: " + esc(p.allergens.join(", ").toUpperCase()) : "NO DECLARED ALLERGENS") + '</div>' +
+      '</div>';
+    }
+  }
+  return '<div class="doc"><h1 style="margin-bottom:16px">Allergen labels</h1>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">' + cells + '</div></div>';
+}
+
+function plDoc() {
+  const months = lastMonths(12);
+  const tot = months.reduce((a, m) => ({
+    revenue: a.revenue + m.revenue, expenses: a.expenses + m.expenses,
+    ingredientCost: a.ingredientCost + m.ingredientCost, profit: a.profit + m.profit
+  }), { revenue: 0, expenses: 0, ingredientCost: 0, profit: 0 });
+  return '<div class="doc">' + docHead("Profit & loss", "Last 12 months", ["Printed " + fmtLongDate(todayISO())]) +
+    '<table><thead><tr><th>Month</th><th class="r">Orders</th><th class="r">Revenue</th><th class="r">Cost of goods</th><th class="r">Expenses</th><th class="r">Net profit</th></tr></thead><tbody>' +
+    months.map(m => '<tr><td>' + m.label + " " + m.year + '</td><td class="r">' + m.count + '</td><td class="r">' + money(m.revenue) +
+      '</td><td class="r">' + money(m.ingredientCost) + '</td><td class="r">' + money(m.expenses) +
+      '</td><td class="r"><strong>' + money(m.profit) + '</strong></td></tr>').join("") +
+    '</tbody></table>' +
+    '<div class="doc-total"><span>Net profit, 12 months</span><span>' + money(tot.profit) + '</span></div>' +
+    '<div class="doc-note">Revenue counts booked and paid orders. Cost of goods uses each product&rsquo;s recipe cost. ' +
+      'Total revenue ' + money(tot.revenue) + ' · cost of goods ' + money(tot.ingredientCost) + ' · expenses ' + money(tot.expenses) + '.</div></div>';
+}
+
+/* ============================================================
+   Exports — CSV, a multi-sheet workbook, and a JSON backup.
+   ============================================================ */
+function download(filename, text, mime) {
+  const blob = new Blob([text], { type: (mime || "text/plain") + ";charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const stamp = () => todayISO();
+const slug = s => String(s || "bakery").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+/** Every table, as [name, headers, rows] — shared by CSV and workbook export. */
+function sheets() {
+  return [
+    ["Orders", ["Customer", "Product", "Qty", "Date", "Status", "Total", "Deposit", "Balance", "Notes"],
+      db.orders.map(o => [customerName(o.customerId), productName(o.productId), num(o.qty) || 1, o.date,
+        STATUS_LABEL[o.status], num(o.total), num(o.deposit), orderBalance(o), o.notes || ""])],
+    ["Customers", ["Name", "Email", "Phone", "Orders", "Lifetime spend", "Notes"],
+      db.customers.map(c => {
+        const list = db.orders.filter(o => o.customerId === c.id);
+        return [c.name, c.email || "", c.phone || "", list.length, sum(list.filter(o => o.status === "paid"), o => num(o.total)), c.notes || ""];
+      })],
+    ["Products", ["Product", "Category", "Ingredients", "Labour", "Overhead", "Unit cost", "Margin %", "Price", "Profit", "Allergens"],
+      db.products.map(p => { const c = costing(p);
+        return [p.name, p.category || "", num(p.ingCost), num(p.labour), num(p.overhead), +c.cost.toFixed(2),
+          num(p.margin), +c.price.toFixed(2), +c.profit.toFixed(2), (p.allergens || []).join(", ")]; })],
+    ["Inventory", ["Ingredient", "Unit", "In stock", "Reorder at", "Cost per unit", "Stock value", "Expiry", "Status"],
+      db.ingredients.map(i => [i.name, i.unit, num(i.stock), num(i.reorder), num(i.cost),
+        +(num(i.stock) * num(i.cost)).toFixed(2), i.expiry || "", ingredientStatus(i).label])],
+    ["Allergen matrix", ["Product"].concat(ALLERGENS),
+      db.products.map(p => [p.name].concat(ALLERGENS.map(a => ((p.allergens || []).includes(a) ? "YES" : ""))))],
+    ["Expenses", ["Category", "Date", "Amount", "Notes"],
+      db.expenses.map(e => [e.category, e.date, num(e.amount), e.notes || ""])],
+    ["Payments", ["Customer", "Order date", "Total", "Received", "Outstanding", "Status"],
+      db.orders.map(o => [customerName(o.customerId), o.date, num(o.total), received(o), outstanding(o), STATUS_LABEL[o.status]])],
+    ["Profit and loss", ["Month", "Orders", "Revenue", "Cost of goods", "Expenses", "Net profit"],
+      lastMonths(12).map(m => [m.label + " " + m.year, m.count, +m.revenue.toFixed(2), +m.ingredientCost.toFixed(2), +m.expenses.toFixed(2), +m.profit.toFixed(2)])],
+    ["Bake log", ["Product", "Batches", "Date", "Notes"],
+      db.bakes.map(b => [productName(b.productId), num(b.qty) || 1, b.date, b.notes || ""])],
+    ["Waste", ["Item", "Qty", "Reason", "Cost", "Date"],
+      db.waste.map(w => [w.item, w.qty || "", w.reason || "", num(w.cost), w.date])],
+    ["Tasks", ["Task", "Due", "Done"], db.tasks.map(t => [t.text, t.due || "", t.done ? "Yes" : "No"])],
+    ["Social", ["Caption", "Channel", "Date", "Posted"], db.social.map(s => [s.caption, s.channel || "", s.date, s.done ? "Yes" : "No"])],
+    ["Settings", ["Setting", "Value"], Object.entries(db.settings).map(([k, v]) => [k, String(v)])]
+  ];
+}
+
+const csvCell = v => { const s = String(v == null ? "" : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+function toCsv(headers, rows) {
+  return [headers].concat(rows).map(r => r.map(csvCell).join(",")).join("\r\n");
+}
+
+/** SpreadsheetML 2003 — a real multi-sheet workbook Excel, Numbers and
+    LibreOffice all open, built without any external library. */
+function toWorkbook() {
+  const cell = v => {
+    const isNum = typeof v === "number" && Number.isFinite(v);
+    return '<Cell><Data ss:Type="' + (isNum ? "Number" : "String") + '">' + esc(isNum ? v : String(v == null ? "" : v)) + "</Data></Cell>";
+  };
+  const sheetXml = ([name, headers, rows]) =>
+    '<Worksheet ss:Name="' + esc(name).slice(0, 31) + '"><Table>' +
+      "<Row>" + headers.map(h => '<Cell ss:StyleID="h"><Data ss:Type="String">' + esc(h) + "</Data></Cell>").join("") + "</Row>" +
+      rows.map(r => "<Row>" + r.map(cell).join("") + "</Row>").join("") +
+    "</Table></Worksheet>";
+  return '<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>' +
+    '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
+    '<Styles><Style ss:ID="h"><Font ss:Bold="1"/><Interior ss:Color="#E8DED0" ss:Pattern="Solid"/></Style></Styles>' +
+    sheets().map(sheetXml).join("") + "</Workbook>";
+}
+</script>
+<script>
+/* ============================================================
+   Actions — every button in the app resolves to one of these.
+   ============================================================ */
+const byId = (list, id) => list.find(x => x.id === id);
+const removeById = (list, id) => { const i = list.findIndex(x => x.id === id); if (i > -1) list.splice(i, 1); };
+
+const ACTIONS = {
+  go: d => go(d.view),
+  closeModal: () => closeModal(),
+  closeModalBack: () => closeModal(),
+  confirmYes: () => { const fn = pendingConfirm; pendingConfirm = null; closeModal(); if (fn) fn(); },
+
+  /* ---- orders ---- */
+  addOrder(d, el) {
+    const f = readForm(el);
+    if (!f.customerId) return toast("Pick a customer first.");
+    if (!f.productId) return toast("Pick a product first.");
+    const p = productById(f.productId);
+    const qty = Math.max(1, parseInt(f.qty, 10) || 1);
+    const total = f.total !== "" ? num(f.total) : (p ? costing(p).price * qty : 0);
+    commit(() => db.orders.push({
+      id: uid(), customerId: f.customerId, productId: f.productId, qty,
+      date: f.date || todayISO(), status: "enquiry", total: +total.toFixed(2), deposit: 0,
+      notes: "", createdAt: todayISO()
+    }), "Enquiry added.");
+    clearForm(el);
+  },
+  openOrder: d => openOrderModal(d.id),
+  saveOrder(d, el) {
+    const f = readForm(el);
+    commit(() => {
+      const o = byId(db.orders, d.id);
+      if (!o) return;
+      Object.assign(o, {
+        customerId: f.customerId, productId: f.productId,
+        qty: Math.max(1, parseInt(f.qty, 10) || 1), date: f.date,
+        total: num(f.total), deposit: clamp(num(f.deposit), 0, num(f.total)),
+        status: f.status, notes: f.notes || ""
+      });
+      if (o.status === "paid") o.deposit = o.total;
+    }, "Order updated.");
+    closeModal();
+  },
+  advance(d) {
+    commit(() => {
+      const o = byId(db.orders, d.id);
+      if (!o) return;
+      const next = STATUSES[Math.min(STATUSES.length - 1, STATUSES.indexOf(o.status) + 1)];
+      setStatus(o, next);
+    });
+  },
+  setStatus(d) { commit(() => { const o = byId(db.orders, d.id); if (o) setStatus(o, d.value); }); },
+  markPaid(d) { commit(() => { const o = byId(db.orders, d.id); if (o) setStatus(o, "paid"); }, "Marked as paid."); closeModal(); },
+  deleteOrder(d) {
+    const o = byId(db.orders, d.id);
+    if (!o) return;
+    confirmDo("Delete order?", customerName(o.customerId) + " — " + productName(o.productId) + ". This cannot be undone.",
+      "Delete order", () => commit(() => removeById(db.orders, d.id), "Order deleted."));
+  },
+  filterOrders(d) { ui.filter = d.value; render(); },
+  searchOrders(d, el) {
+    ui.q = el.value;
+    render();
+    const box = $('#app input[data-change="searchOrders"]');
+    if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+  },
+
+  /* ---- customers ---- */
+  addCustomer(d, el) {
+    const f = readForm(el);
+    if (!f.name || !f.name.trim()) return toast("A name is needed.");
+    commit(() => db.customers.push({ id: uid(), name: f.name.trim(), email: f.email || "", phone: f.phone || "", notes: "" }), "Customer added.");
+    clearForm(el);
+  },
+  toggleCustomer(d) { ui.openCustomer = ui.openCustomer === d.id ? null : d.id; render(); },
+  editCustomer: d => openCustomerModal(d.id),
+  saveCustomer(d, el) {
+    const f = readForm(el);
+    commit(() => { const c = customerById(d.id); if (c) Object.assign(c, { name: f.name || c.name, email: f.email, phone: f.phone, notes: f.notes }); }, "Customer saved.");
+    closeModal();
+  },
+  deleteCustomer(d) {
+    const c = customerById(d.id);
+    const n = db.orders.filter(o => o.customerId === d.id).length;
+    confirmDo("Delete customer?", c.name + (n ? " and their " + n + " order" + (n === 1 ? "" : "s") : "") + ". This cannot be undone.",
+      "Delete", () => commit(() => {
+        db.orders = db.orders.filter(o => o.customerId !== d.id);
+        removeById(db.customers, d.id);
+      }, "Customer deleted."));
+  },
+
+  /* ---- products ---- */
+  addProduct(d, el) {
+    const f = readForm(el);
+    if (!f.name || !f.name.trim()) return toast("Give the product a name.");
+    commit(() => db.products.push({
+      id: uid(), name: f.name.trim(), category: f.category || "",
+      ingCost: num(f.ingCost), labour: num(f.labour), overhead: num(f.overhead),
+      margin: clamp(num(f.margin) || num(db.settings.defaultMargin), 0, 95),
+      allergens: f.allergens || []
+    }), "Product added.");
+    clearForm(el);
+  },
+  editProduct: d => openProductModal(d.id),
+  saveProduct(d, el) {
+    const f = readForm(el);
+    commit(() => {
+      const p = productById(d.id);
+      if (p) Object.assign(p, {
+        name: f.name || p.name, category: f.category,
+        ingCost: num(f.ingCost), labour: num(f.labour), overhead: num(f.overhead),
+        margin: clamp(num(f.margin), 0, 95), allergens: f.allergens || []
+      });
+    }, "Product saved.");
+    closeModal();
+  },
+  deleteProduct(d) {
+    const p = productById(d.id);
+    confirmDo("Delete product?", p.name + ". Existing orders keep their prices but lose the product link.",
+      "Delete", () => commit(() => removeById(db.products, d.id), "Product deleted."));
+  },
+
+  /* ---- inventory ---- */
+  addIngredient(d, el) {
+    const f = readForm(el);
+    if (!f.name || !f.name.trim()) return toast("Name the ingredient.");
+    commit(() => db.ingredients.push({
+      id: uid(), name: f.name.trim(), unit: f.unit || "kg", stock: num(f.stock),
+      reorder: num(f.reorder), cost: num(f.cost), expiry: f.expiry || ""
+    }), "Ingredient added.");
+    clearForm(el);
+  },
+  adjustStock(d) {
+    commit(() => {
+      const i = byId(db.ingredients, d.id);
+      if (!i) return;
+      const step = ["g", "ml", "units"].includes(i.unit) ? 1 : 0.5;
+      i.stock = Math.max(0, +(num(i.stock) + num(d.by) * step).toFixed(2));
+    });
+  },
+  deleteIngredient(d) { commit(() => removeById(db.ingredients, d.id), "Ingredient removed."); },
+
+  /* ---- expenses ---- */
+  addExpense(d, el) {
+    const f = readForm(el);
+    if (!f.category || !f.category.trim()) return toast("Give the expense a category.");
+    commit(() => db.expenses.push({ id: uid(), category: f.category.trim(), amount: num(f.amount), date: f.date || todayISO(), notes: "" }), "Expense logged.");
+    clearForm(el);
+  },
+  deleteExpense(d) { commit(() => removeById(db.expenses, d.id), "Expense deleted."); },
+
+  /* ---- kitchen ---- */
+  addTask(d, el) {
+    const f = readForm(el);
+    if (!f.text || !f.text.trim()) return toast("What's the task?");
+    commit(() => db.tasks.push({ id: uid(), text: f.text.trim(), done: false, due: f.due || "" }));
+    clearForm(el);
+  },
+  toggleTask(d) { commit(() => { const t = byId(db.tasks, d.id); if (t) t.done = !t.done; }); },
+  deleteTask(d) { commit(() => removeById(db.tasks, d.id)); },
+  addBake(d, el) {
+    const f = readForm(el);
+    if (!f.productId) return toast("Pick a product to log.");
+    commit(() => db.bakes.push({ id: uid(), productId: f.productId, qty: Math.max(1, parseInt(f.qty, 10) || 1), date: todayISO(), notes: "" }), "Bake logged.");
+    clearForm(el);
+  },
+  deleteBake(d) { commit(() => removeById(db.bakes, d.id)); },
+  addWaste(d, el) {
+    const f = readForm(el);
+    if (!f.item || !f.item.trim()) return toast("What was wasted?");
+    commit(() => db.waste.push({ id: uid(), item: f.item.trim(), qty: f.qty || "", reason: f.reason || "", cost: num(f.cost), date: todayISO() }), "Waste logged.");
+    clearForm(el);
+  },
+  deleteWaste(d) { commit(() => removeById(db.waste, d.id)); },
+  addSocial(d, el) {
+    const f = readForm(el);
+    if (!f.caption || !f.caption.trim()) return toast("Add a caption idea.");
+    commit(() => db.social.push({ id: uid(), caption: f.caption.trim(), channel: f.channel || "Instagram", date: f.date || todayISO(), done: false }), "Post planned.");
+    clearForm(el);
+  },
+  toggleSocial(d) { commit(() => { const s = byId(db.social, d.id); if (s) s.done = !s.done; }); },
+  deleteSocial(d) { commit(() => removeById(db.social, d.id)); },
+
+  /* ---- calendar ---- */
+  calMove(d) {
+    const base = ui.month ? parseISO(ui.month + "-01") : (() => { const x = new Date(); x.setDate(1); return x; })();
+    base.setMonth(base.getMonth() + parseInt(d.by, 10));
+    ui.month = iso(base).slice(0, 7);
+    render();
+  },
+  calToday() { ui.month = null; render(); },
+
+  /* ---- printing ---- */
+  printQuote: d => printDocs(orderDoc(byId(db.orders, d.id), "quote")),
+  printInvoice: d => printDocs(orderDoc(byId(db.orders, d.id), "invoice")),
+  printBakeSheet: () => printDocs(bakeSheetDoc(todayISO())),
+  printBakeSheetFor(d, el) { const f = readForm(el); printDocs(bakeSheetDoc(f.date || todayISO())); },
+  printShoppingList: () => printDocs(shoppingListDoc()),
+  printLabels(d, el) { const f = readForm(el); printDocs(labelsDoc(f.productId, f.weight, f.copies)); },
+  printPL: () => printDocs(plDoc()),
+
+  /* ---- settings, exports, backup ---- */
+  saveSettings(d, el) {
+    const f = readForm(el);
+    commit(() => Object.assign(db.settings, {
+      bakeryName: f.bakeryName || "My Bakery", ownerName: f.ownerName, email: f.email, phone: f.phone,
+      address: f.address, currency: f.currency || "$", terms: f.terms,
+      monthlyGoal: num(f.monthlyGoal), defaultMargin: clamp(num(f.defaultMargin), 0, 95),
+      depositPct: clamp(num(f.depositPct), 0, 100), quoteValidDays: Math.max(1, num(f.quoteValidDays))
+    }), "Settings saved.");
+  },
+  exportBackup() {
+    db.meta.lastBackup = todayISO();
+    save();
+    download(slug(db.settings.bakeryName) + "-backup-" + stamp() + ".json", JSON.stringify(db, null, 2), "application/json");
+    toast("Backup downloaded.");
+    render();
+  },
+  importBackup(d, el) {
+    const file = el.files && el.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed;
+      try { parsed = JSON.parse(reader.result); }
+      catch (err) { return toast("That file isn't a valid backup."); }
+      if (!parsed || !parsed.schema || !Array.isArray(parsed.orders)) return toast("That file isn't a Bakery Business OS backup.");
+      confirmDo("Restore this backup?", "It replaces everything currently on this device — " +
+        parsed.orders.length + " orders, " + (parsed.customers || []).length + " customers.",
+        "Restore", () => { db = migrate(parsed); save(); go("dashboard"); toast("Backup restored."); });
+    };
+    reader.readAsText(file);
+    el.value = "";
+  },
+  exportWorkbook() {
+    download(slug(db.settings.bakeryName) + "-workbook-" + stamp() + ".xls", toWorkbook(), "application/vnd.ms-excel");
+    toast("Workbook downloaded — " + sheets().length + " sheets.");
+  },
+  exportCsv(d) {
+    const found = sheets().find(s => slug(s[0]) === d.table);
+    if (!found) return;
+    download(slug(db.settings.bakeryName) + "-" + d.table + "-" + stamp() + ".csv", toCsv(found[1], found[2]), "text/csv");
+  },
+  resetEmpty() {
+    confirmDo("Clear all data?", "Every order, customer, product and record on this device will be deleted. Export a backup first if you want to keep it.",
+      "Delete everything", () => {
+        const fresh = seed();
+        db = Object.assign(fresh, {
+          customers: [], products: [], ingredients: [], orders: [], expenses: [],
+          tasks: [], bakes: [], waste: [], social: [],
+          settings: Object.assign(fresh.settings, { bakeryName: db.settings.bakeryName, currency: db.settings.currency }),
+          meta: { lastBackup: null, createdAt: todayISO(), sample: false }
+        });
+        save(); go("dashboard"); toast("Cleared. This is your bakery now.");
+      });
+  },
+  resetSample() {
+    confirmDo("Reload sample data?", "This replaces what's on the device with the demo bakery.",
+      "Reload sample", () => { db = seed(); save(); go("dashboard"); toast("Sample data loaded."); });
+  }
+};
+
+/** Status changes also settle the money, so payment figures stay honest. */
+function setStatus(o, status) {
+  o.status = status;
+  if (status === "paid") o.deposit = num(o.total);
+  else if (status === "booked" && num(o.deposit) === 0) o.deposit = +(num(o.total) * num(db.settings.depositPct) / 100).toFixed(2);
+  else if (status === "enquiry" || status === "quoted") o.deposit = 0;
+}
+
+/* ---------- kanban drag & drop ---------- */
+let dragId = null;
+document.addEventListener("dragstart", e => {
+  const card = e.target.closest(".kan-card");
+  if (!card) return;
+  dragId = card.dataset.id;
+  e.dataTransfer.effectAllowed = "move";
+  try { e.dataTransfer.setData("text/plain", dragId); } catch (err) { /* older browsers */ }
+});
+document.addEventListener("dragover", e => {
+  const col = e.target.closest("[data-drop]");
+  if (!col || !dragId) return;
+  e.preventDefault();
+  document.querySelectorAll(".kan-col.drag-over").forEach(c => c.classList.remove("drag-over"));
+  col.classList.add("drag-over");
+});
+document.addEventListener("drop", e => {
+  const col = e.target.closest("[data-drop]");
+  if (!col || !dragId) return;
+  e.preventDefault();
+  const id = dragId; dragId = null;
+  commit(() => { const o = byId(db.orders, id); if (o && o.status !== col.dataset.drop) setStatus(o, col.dataset.drop); });
+});
+document.addEventListener("dragend", () => {
+  dragId = null;
+  document.querySelectorAll(".kan-col.drag-over").forEach(c => c.classList.remove("drag-over"));
+});
+/** Space/Enter on the tick boxes, for keyboard users. */
+document.addEventListener("keydown", e => {
+  if ((e.key === " " || e.key === "Enter") && e.target.matches('.check[data-act]')) {
+    e.preventDefault();
+    ACTIONS[e.target.dataset.act](e.target.dataset, e.target, e);
+  }
+});
+
+/* ---------- boot ---------- */
+db = load();
+const startView = location.hash.replace("#", "");
+if (VIEWS[startView]) view = startView;
+render();
+save();
+</script>
+</body>
+</html>
