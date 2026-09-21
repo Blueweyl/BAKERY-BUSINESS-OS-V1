@@ -78,8 +78,18 @@ Moving an order to **Paid** records whatever is still owed as cash taken
 today, so it always asks first and names the exact amount — whether you use
 the button, the status list, the stage arrow or drag a card across the board.
 
+The product dialog reprices as you type: change a quantity, the labour or the
+margin and the line costs, total cost, suggested price and profit all move
+before anything is saved. The arithmetic is the same function the saved product
+uses, so a figure on screen can never differ from the one stored.
+
+Ingredient prices are held to four decimals, because an egg or a gram of sugar
+costs a fraction of a cent. Every money total is still rounded to two.
+
 Ingredient costs are edited in Inventory — name, unit, stock, reorder level,
-cost per unit and expiry. Saving a new cost reprices every recipe that uses it
+cost per unit and expiry. Changing the unit of an ingredient a recipe uses asks
+first, naming the quantities that would be reinterpreted — they are not
+converted. Saving a new cost reprices every recipe that uses it
 and every product's suggested price straight away; the dialog lists which
 products move and by how much before you commit. Orders already booked or paid
 keep the cost they were committed at, so past profit never moves.

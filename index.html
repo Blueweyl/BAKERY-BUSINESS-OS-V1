@@ -562,7 +562,7 @@ function migrate(data) {
   for (const i of data.ingredients) {
     i.stock = round2(Math.max(0, num(i.stock)));
     i.reorder = round2(Math.max(0, num(i.reorder)));
-    i.cost = round2(Math.max(0, num(i.cost)));
+    i.cost = round4(Math.max(0, num(i.cost)));
   }
   for (const e of data.expenses) e.amount = round2(Math.max(0, num(e.amount)));
   for (const w of data.waste) w.cost = round2(Math.max(0, num(w.cost)));
@@ -625,7 +625,14 @@ function money(n, opts) {
     : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (v < 0 ? "-" : "") + cur() + body.replace(/^-/, "");
 }
-const money0 = n => cur() + (Math.round(num(n)) + 0).toLocaleString();   // + 0 normalises -0
+const money0 = n => cur() + (Math.round(num(n)) + 0).toLocaleString();
+/** A per-unit price, which may be a fraction of a cent: two decimals when
+    that says it all, up to four when it does not. Totals never use this. */
+function unitMoney(n) {
+  const v = num(n);
+  const body = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  return (v < 0 ? "-" : "") + cur() + body;
+}   // + 0 normalises -0
 
 /* ---------- derived business logic ---------- */
 const byId = (list, id) => (list || []).find(x => x.id === id);
@@ -670,6 +677,9 @@ function costing(p) {
    Every figure below derives from those three facts, so Orders, Dashboard,
    invoices, exports and the P&L cannot disagree with each other.           */
 const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
+/** Ingredient prices are per gram, per ml, per egg — often fractions of a
+    cent — so they are kept to four places. Every money TOTAL stays at two. */
+const round4 = n => Math.round((Number(n) || 0) * 10000) / 10000;
 const paymentsOf = o => (o.payments || []);
 /** Cash actually collected against this order. */
 const receivedOf = o => round2(sum(paymentsOf(o), pay => num(pay.amount)));
@@ -997,6 +1007,14 @@ document.addEventListener("change", e => {
   const fn = ACTIONS[el.dataset.change];
   if (fn) fn(el.dataset, el, e);
 });
+// The product dialog reprices as it is typed in. Nothing is re-rendered and
+// nothing is saved — only the computed cells are rewritten.
+const repriceDialog = e => {
+  const form = e.target.closest('[data-form="editProduct"]');
+  if (form) livePricing(form);
+};
+document.addEventListener("input", repriceDialog);
+document.addEventListener("change", repriceDialog);
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && $("#overlay").innerHTML) closeModal();
   // Keep Tab inside an open dialog — outside it is unreachable anyway.
@@ -1523,8 +1541,8 @@ function recipeEditor(lines) {
       '<select data-r-ing aria-label="Ingredient">' + opts.map(o => '<option value="' + esc(o.value) + '"' +
         (o.value === line.ingredientId ? " selected" : "") + '>' + esc(o.label) + '</option>').join("") + '</select>' +
       '<input type="number" min="0" step="0.01" data-r-qty value="' + esc(line.qty) + '" aria-label="Quantity">' +
-      '<span class="hint num" style="text-align:right">' + (i ? money(num(i.cost)) : "—") + '</span>' +
-      '<span class="strong num" style="text-align:right">' + (i ? money(num(line.qty) * num(i.cost)) : "—") + '</span>' +
+      '<span class="hint num" data-live="unit" style="text-align:right">' + (i ? unitMoney(num(i.cost)) : "—") + '</span>' +
+      '<span class="strong num" data-live="line" style="text-align:right">' + (i ? money(num(line.qty) * num(i.cost)) : "—") + '</span>' +
       '<button class="icon-btn" data-act="removeRecipeLine" data-index="' + idx + '" aria-label="Remove ingredient">&#10005;</button>' +
     '</div>';
   };
@@ -1544,7 +1562,7 @@ function recipeEditor(lines) {
         lines.map(row).join("") +
         '<div class="row between" style="border-top:1px solid var(--line);padding-top:8px;margin-top:2px">' +
           '<span class="hint">Ingredient cost, one batch</span>' +
-          '<span class="strong num">' + money(total) + '</span></div>'
+          '<span class="strong num" data-live="batch">' + money(total) + '</span></div>'
       : '<p class="hint" style="margin:0 0 8px">No recipe yet. Add ingredients and the cost is priced from your inventory automatically.</p>') +
   '</div>';
 }
@@ -1553,24 +1571,71 @@ function recipeEditor(lines) {
     make, the margin applied, and what that means for price and profit. */
 function pricingBreakdown(p) {
   const c = costing(p);
-  const line = (label, value, opts) => {
+  const line = (label, value, key, opts) => {
     const o = opts || {};
     return '<div class="row between" style="padding:5px 0' + (o.rule ? ";border-top:1px solid var(--line);margin-top:4px;padding-top:8px" : "") + '">' +
-      '<span' + (o.strong ? ' class="strong"' : ' class="muted"') + '>' + label + '</span>' +
-      '<span class="num' + (o.strong ? ' strong' : '') + '"' + (o.color ? ' style="color:' + o.color + '"' : "") + '>' + value + '</span></div>';
+      '<span' + (o.strong ? ' class="strong"' : ' class="muted"') + ' data-live-label="' + key + '">' + label + '</span>' +
+      '<span class="num' + (o.strong ? ' strong' : '') + '" data-live="' + key + '"' +
+        (o.color ? ' style="color:' + o.color + '"' : "") + '>' + value + '</span></div>';
   };
   return '<div class="card" style="padding:14px;margin-top:4px">' +
     '<div class="card-title" style="margin-bottom:6px;font-size:14px">How this price is worked out</div>' +
-    line("Ingredients" + (c.fromRecipe ? " (from recipe)" : ""), money(c.ing)) +
-    line("Labour", money(num(p.labour))) +
-    line("Overhead", money(num(p.overhead))) +
-    line("= Total cost", money(c.cost), { strong: true, rule: true }) +
-    line("Margin", clamp(num(p.margin), 0, 95) + "%") +
-    line("&rarr; Suggested price", money(c.price), { strong: true, rule: true, color: "var(--accent)" }) +
-    line("&rarr; Profit", money(c.profit), { strong: true, color: "var(--green)" }) +
+    line("Ingredients" + (c.fromRecipe ? " (from recipe)" : ""), money(c.ing), "ing") +
+    line("Labour", money(num(p.labour)), "labour") +
+    line("Overhead", money(num(p.overhead)), "overhead") +
+    line("= Total cost", money(c.cost), "cost", { strong: true, rule: true }) +
+    line("Margin", clamp(num(p.margin), 0, 95) + "%", "margin") +
+    line("&rarr; Suggested price", money(c.price), "price", { strong: true, rule: true, color: "var(--accent)" }) +
+    line("&rarr; Profit", money(c.profit), "profit", { strong: true, color: "var(--green)" }) +
     '<p class="hint" style="margin:10px 0 0">price = total cost &divide; (1 &minus; margin %). ' +
       'Update ingredient prices in Inventory — product costs and suggested prices recalculate automatically.</p>' +
   '</div>';
+}
+
+/** Repaints the recipe lines and the pricing ladder from what is typed in the
+    dialog right now, before any of it is saved. Only the computed cells are
+    written, never the inputs, so nothing a baker is halfway through typing
+    moves under them. The arithmetic is costing()'s — the same function the
+    saved product uses — so a live figure can never drift from a stored one. */
+function livePricing(form) {
+  if (!form) return;
+  const at = key => form.querySelector('[data-f="' + key + '"]');
+  const draftRecipe = [];
+  for (const row of form.querySelectorAll(".recipe-row")) {
+    const ing = byId(db.ingredients, row.querySelector("[data-r-ing]").value);
+    const qty = num(row.querySelector("[data-r-qty]").value);
+    const unitCell = row.querySelector('[data-live="unit"]');
+    const lineCell = row.querySelector('[data-live="line"]');
+    if (unitCell) unitCell.textContent = ing ? unitMoney(num(ing.cost)) : "—";
+    if (lineCell) lineCell.textContent = ing ? money(qty * num(ing.cost)) : "—";
+    if (ing && qty > 0) draftRecipe.push({ ingredientId: ing.id, qty });
+  }
+  const hasRecipe = !!form.querySelector(".recipe-row");
+  const draft = {
+    recipe: draftRecipe,
+    ingCost: at("ingCost") && !at("ingCost").disabled ? num(at("ingCost").value) : 0,
+    labour: at("labour") ? Math.max(0, num(at("labour").value)) : 0,
+    overhead: at("overhead") ? Math.max(0, num(at("overhead").value)) : 0,
+    margin: at("margin") ? num(at("margin").value) : 0
+  };
+  const c = costing(draft);
+  const set = (key, text) => {
+    const el = form.querySelector('[data-live="' + key + '"]');
+    if (el) el.textContent = text;
+  };
+  set("batch", money(c.ing));
+  set("ing", money(c.ing));
+  set("labour", money(draft.labour));
+  set("overhead", money(draft.overhead));
+  set("cost", money(c.cost));
+  set("margin", clamp(num(draft.margin), 0, 95) + "%");
+  set("price", money(c.price));
+  set("profit", money(c.profit));
+  const label = form.querySelector('[data-live-label="ing"]');
+  if (label) label.textContent = "Ingredients" + (hasRecipe && draftRecipe.length ? " (from recipe)" : "");
+  // The read-only ingredients box mirrors the recipe as the quantities change.
+  const box = form.querySelector("[data-live-box]");
+  if (box) box.value = money(c.ing);
 }
 
 let currentProductId = null;
@@ -1593,7 +1658,7 @@ function openIngredientModal(id) {
       '<div class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1.2fr">' +
         field("In stock", '<input type="number" min="0" step="0.01" data-f="stock" value="' + esc(num(i.stock)) + '">') +
         field("Reorder at", '<input type="number" min="0" step="0.01" data-f="reorder" value="' + esc(num(i.reorder)) + '">') +
-        field("Cost per unit " + cur(), '<input type="number" min="0" step="0.01" data-f="cost" value="' + esc(num(i.cost)) + '">') +
+        field("Cost per unit " + cur(), '<input type="number" min="0" step="0.0001" data-f="cost" value="' + esc(num(i.cost)) + '">') +
         field("Expiry", '<input type="date" data-f="expiry" value="' + esc(i.expiry || "") + '">') +
       '</div>' +
       '<div class="alert amber" style="margin-top:4px"><span class="dot"></span><span>' +
@@ -1644,7 +1709,7 @@ function openProductModal(id, draft) {
         field("Margin %", '<input type="number" min="0" max="95" step="1" data-f="margin" value="' + val("margin", p.margin) + '">') +
         field(lines.length ? "Ingredients " + cur() + " (from recipe)" : "Ingredients " + cur(),
           lines.length
-            ? '<input value="' + esc(money(sum(lines, l => {
+            ? '<input data-live-box value="' + esc(money(sum(lines, l => {
                 const i = byId(db.ingredients, l.ingredientId);
                 return i ? num(l.qty) * num(i.cost) : 0;
               }))) + '" disabled>'
@@ -1678,7 +1743,7 @@ VIEWS.inventory = function () {
         field("Unit", '<select data-f="unit"><option>kg</option><option>g</option><option>L</option><option>ml</option><option>units</option></select>') +
         field("In stock", input("stock", 'type="number" min="0" step="0.01" placeholder="0"')) +
         field("Reorder at", input("reorder", 'type="number" min="0" step="0.01" placeholder="0"')) +
-        field("Cost per unit " + cur(), input("cost", 'type="number" min="0" step="0.01" placeholder="0.00"')) +
+        field("Cost per unit " + cur(), input("cost", 'type="number" min="0" step="0.0001" placeholder="0.00"')) +
         field("Expiry", '<input type="date" data-f="expiry">') +
         '<button class="btn" data-act="addIngredient" data-submit>Add</button>' +
       '</div>' +
@@ -1694,7 +1759,7 @@ VIEWS.inventory = function () {
           const s = ingredientStatus(i);
           const days = i.expiry ? daysUntil(i.expiry) : null;
           return '<div class="trow" style="grid-template-columns:' + grid + '">' +
-            '<span><span class="strong">' + esc(i.name) + '</span><br><span class="hint">' + money(num(i.cost)) + ' / ' + esc(i.unit) + '</span></span>' +
+            '<span><span class="strong">' + esc(i.name) + '</span><br><span class="hint">' + unitMoney(num(i.cost)) + ' / ' + esc(i.unit) + '</span></span>' +
             '<span class="num"><button class="icon-btn" style="color:var(--ink-45)" data-act="adjustStock" data-id="' + i.id + '" data-by="-1" aria-label="Decrease">&minus;</button> ' +
               esc(num(i.stock)) + ' ' + esc(i.unit) +
               ' <button class="icon-btn" style="color:var(--ink-45)" data-act="adjustStock" data-id="' + i.id + '" data-by="1" aria-label="Increase">+</button></span>' +
@@ -2468,7 +2533,7 @@ const ACTIONS = {
     commit(() => db.ingredients.push({
       id: uid(), name: f.name.trim(), unit: f.unit || "kg",
       stock: round2(Math.max(0, num(f.stock))), reorder: round2(Math.max(0, num(f.reorder))),
-      cost: round2(Math.max(0, num(f.cost))), expiry: f.expiry || ""
+      cost: round4(Math.max(0, num(f.cost))), expiry: f.expiry || ""
     }), "Ingredient added.");
     clearForm(el);
   },
@@ -2487,22 +2552,39 @@ const ACTIONS = {
     if (!i) return;
     if (!f.name || !f.name.trim()) return toast("Name the ingredient.");
     if (sameName(db.ingredients, f.name, d.id)) return toast("Another ingredient already has that name.");
-    const before = round2(num(i.cost));
-    commit(() => Object.assign(i, {
-      name: f.name.trim(),
-      unit: UNITS.includes(f.unit) ? f.unit : i.unit,
-      stock: round2(Math.max(0, num(f.stock))),
-      reorder: round2(Math.max(0, num(f.reorder))),
-      cost: round2(Math.max(0, num(f.cost))),
-      expiry: f.expiry || ""
-    }));
-    closeModal();
-    // Recipes read the live cost, so every product repriced the moment that
-    // assignment landed. Say so, because the change is invisible otherwise.
-    const after = round2(num(i.cost));
-    toast(after === before
-      ? "Ingredient saved."
-      : "Saved — " + money(before) + " to " + money(after) + " per " + i.unit + ". Product prices updated.");
+    const before = round4(num(i.cost));
+    const unit = UNITS.includes(f.unit) ? f.unit : i.unit;
+    const apply = () => {
+      commit(() => Object.assign(i, {
+        name: f.name.trim(), unit,
+        stock: round2(Math.max(0, num(f.stock))),
+        reorder: round2(Math.max(0, num(f.reorder))),
+        cost: round4(Math.max(0, num(f.cost))),
+        expiry: f.expiry || ""
+      }));
+      closeModal();
+      // Recipes read the live cost, so every product repriced the moment that
+      // assignment landed. Say so, because the change is invisible otherwise.
+      const after = round4(num(i.cost));
+      toast(after === before
+        ? "Ingredient saved."
+        : "Saved — " + unitMoney(before) + " to " + unitMoney(after) + " per " + i.unit + ". Product prices updated.");
+    };
+    // Recipe quantities are plain numbers in the old unit. Switching kg to g
+    // leaves "0.9" meaning 0.9 g, which silently guts every recipe that uses
+    // it — so the quantities that would be reinterpreted are named first.
+    const users = db.products.filter(p => (p.recipe || []).some(l => l.ingredientId === d.id));
+    if (unit !== i.unit && users.length) {
+      return confirmDo("Change the unit from " + i.unit + " to " + unit + "?",
+        users.length + " recipe" + (users.length === 1 ? "" : "s") + " measure " + i.name + " in " + i.unit +
+        ": " + users.map(p => {
+          const l = (p.recipe || []).find(x => x.ingredientId === d.id) || {};
+          return p.name + " (" + num(l.qty) + " " + i.unit + ")";
+        }).join(", ") + ". Those numbers are not converted — each would now mean " +
+        unit + ", changing what the recipe costs. Check the quantities and the cost per unit afterwards.",
+        "Change unit", apply);
+    }
+    apply();
   },
   deleteIngredient(d) {
     const i = byId(db.ingredients, d.id);
