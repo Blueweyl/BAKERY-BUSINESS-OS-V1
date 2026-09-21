@@ -61,6 +61,10 @@ h1,h2,h3{margin:0;font-weight:700;letter-spacing:-.01em}
 .card.dark{background:var(--ink);border-color:var(--ink);color:var(--bg)}
 .card-title{font-weight:600;font-size:16px;margin-bottom:14px}
 .grid{display:grid;gap:18px}
+/* Grid and flex children default to min-width:auto, which stops an
+   overflow-x:auto table inside them from ever scrolling — it stretches the
+   page instead. */
+.grid > *,.stack > *,.main > *{min-width:0}
 .grid.kpis{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
 .grid.two{grid-template-columns:1fr 1fr}
 .grid.wide-narrow{grid-template-columns:1.4fr 1fr}
@@ -119,11 +123,13 @@ label.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(
 .pill.grey{background:rgba(45,33,24,.07);color:var(--ink-60)}
 
 /* ---------- charts ---------- */
-.bars{display:flex;align-items:flex-end;gap:24px;height:200px}
-.bar-col{display:flex;flex-direction:column;align-items:center;gap:10px;flex:1;height:100%;justify-content:flex-end}
-.bar-pair{display:flex;align-items:flex-end;gap:6px;flex:1;width:100%;justify-content:center}
-.bar{width:44px;max-width:22%;background:var(--accent);border-radius:6px 6px 0 0;min-height:2px;transition:height .3s}
+.bars{display:flex;align-items:flex-end;gap:24px;height:200px;min-width:0}
+.bar-col{display:flex;flex-direction:column;align-items:center;gap:10px;flex:1 1 0;min-width:0;height:100%;justify-content:flex-end}
+.bar-pair{display:flex;align-items:flex-end;gap:6px;flex:1;width:100%;min-width:0;justify-content:center}
+/* Bars flex down rather than forcing the chart wider than the phone. */
+.bar{flex:1 1 0;min-width:7px;max-width:44px;background:var(--accent);border-radius:6px 6px 0 0;min-height:2px;transition:height .3s}
 .bar.ink{background:var(--ink)}
+.bar.green{background:var(--green)}
 .bar-label{font-size:13px;color:var(--ink-60);text-align:center}
 .bar-cap{font-size:12px;font-weight:600;color:var(--ink-60)}
 .progress{background:var(--line);border-radius:20px;height:12px;overflow:hidden}
@@ -132,6 +138,7 @@ label.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(
 .legend span{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink-60)}
 .swatch{width:12px;height:12px;border-radius:3px;background:var(--accent)}
 .swatch.ink{background:var(--ink)}
+.swatch.green{background:var(--green)}
 
 /* ---------- alerts ---------- */
 .alert{display:flex;align-items:center;gap:10px;border-radius:var(--radius-sm);padding:10px 14px;font-size:14.5px}
@@ -218,6 +225,9 @@ label.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(
   .kanban{grid-template-columns:repeat(4,minmax(180px,1fr))}
   .cal-grid{gap:3px;grid-auto-rows:minmax(58px,auto)}
   .cal-chip{font-size:9px;padding:1px 4px}
+  .bars{gap:8px}
+  .bar-pair{gap:3px}
+  .bar-label{font-size:11px}
   .modal{padding:20px 18px}
   .toast{bottom:92px}
 }
@@ -278,7 +288,7 @@ const sum = (arr, fn) => arr.reduce((a, x) => a + (fn ? fn(x) : x), 0);
 
 /* ---------- state ---------- */
 const STORE_KEY = "bakery-business-os/v1";
-const SCHEMA = 1;
+const SCHEMA = 2;
 const ALLERGENS = ["Gluten", "Egg", "Dairy", "Nuts", "Soy"];
 const STATUSES = ["enquiry", "quoted", "booked", "paid"];
 const STATUS_LABEL = { enquiry: "Enquiry", quoted: "Quoted", booked: "Booked", paid: "Paid" };
@@ -306,7 +316,7 @@ function seed() {
   /** recipe: what one batch consumes, in each ingredient's own unit. */
   const recipe = pairs => pairs.map(([name, qty]) => ({ ingredientId: iId(name), qty }));
   const prod = (name, recipeLines, labour, overhead, margin, allergens, category) =>
-    ({ id: uid(), name, recipe: recipe(recipeLines), ingCost: 0, labour, overhead, margin, allergens, category });
+    ({ id: uid(), name, recipe: recipe(recipeLines), ingCost: 0, labour, overhead, margin, allergens, category, archived: false });
 
   const products = [
     prod("Classic Vanilla Cake",
@@ -337,10 +347,29 @@ function seed() {
   ];
   const byName = n => customers.find(c => c.name === n).id;
   const pByName = n => products.find(p => p.name === n).id;
-  const order = (cust, product, qty, date, status, total, deposit, notes) => ({
-    id: uid(), customerId: byName(cust), productId: pByName(product), qty, date,
-    status, total, deposit, notes: notes || "", createdAt: t
-  });
+  /** Cost frozen from the sample recipes, exactly as a real order freezes
+      it when committed — so the sample's history is stable too. */
+  const snap = (prod_, when) => {
+    const ingCost = round2(prod_.recipe.reduce((a, l) =>
+      a + num(l.qty) * num(ingredients.find(i => i.id === l.ingredientId).cost), 0));
+    return { ing: ingCost, labour: num(prod_.labour), overhead: num(prod_.overhead),
+      unit: round2(ingCost + num(prod_.labour) + num(prod_.overhead)), productName: prod_.name, at: when };
+  };
+  /** `paid` is cash actually received, which becomes a payment record. */
+  const order = (cust, product, qty, date, status, total, paid, notes) => {
+    const prod_ = products.find(x => x.name === product);
+    const raised = iso(new Date(parseISO(date).getTime() - 9 * DAY));
+    return {
+      id: uid(), customerId: byName(cust), productId: prod_.id, qty, date, status,
+      total: round2(total),
+      depositRequired: ["quoted", "booked", "paid"].includes(status) ? round2(total * 33 / 100) : 0,
+      payments: num(paid) > 0
+        ? [{ id: uid(), amount: round2(paid), date, note: round2(paid) >= round2(total) ? "Paid in full" : "Deposit" }]
+        : [],
+      costSnapshot: (status === "booked" || status === "paid") ? snap(prod_, raised) : null,
+      notes: notes || "", createdAt: raised
+    };
+  };
 
   return {
     schema: SCHEMA,
@@ -357,7 +386,7 @@ function seed() {
       order("Priya Desai", "Choc Fudge Cake", 1, shiftDays(-6), "paid", 310, 310, "Baby shower, 2 tiers."),
       order("Ella Marsh", "Red Velvet Cake", 1, shiftDays(-9), "paid", 140, 140, "Collected."),
       order("Sana Khan", "Classic Vanilla Cake", 3, shiftDays(21), "enquiry", 620, 0, "Wedding — tasting Friday."),
-      order("Ella Marsh", "Lemon Drizzle Loaf", 4, shiftDays(0), "booked", 72, 72, "Market stall pre-order."),
+      order("Ella Marsh", "Lemon Drizzle Loaf", 4, shiftDays(0), "booked", 72, 0, "Market stall pre-order — deposit not yet received."),
       order("Priya Desai", "Cupcakes (box of 12)", 3, shiftDays(-1), "paid", 96, 96, ""),
       order("Maria Torres", "Macarons (box of 12)", 2, shiftDays(-2), "paid", 76, 76, ""),
       order("James Reyes", "Lemon Drizzle Loaf", 5, shiftDays(-4), "paid", 90, 90, "Weekly office drop."),
@@ -408,9 +437,9 @@ function seed() {
       { id: uid(), text: "Post market-stall photo", done: false, due: shiftDays(2) }
     ],
     bakes: [
-      { id: uid(), productId: pByName("Classic Vanilla Cake"), qty: 1, date: shiftDays(-1), notes: "" },
-      { id: uid(), productId: pByName("Cupcakes (box of 12)"), qty: 2, date: shiftDays(-3), notes: "" },
-      { id: uid(), productId: pByName("Macarons (box of 12)"), qty: 1, date: shiftDays(-5), notes: "Shells cracked — see waste log" }
+      { id: uid(), productId: pByName("Classic Vanilla Cake"), qty: 1, date: shiftDays(-1), notes: "", deductions: [] },
+      { id: uid(), productId: pByName("Cupcakes (box of 12)"), qty: 2, date: shiftDays(-3), notes: "", deductions: [] },
+      { id: uid(), productId: pByName("Macarons (box of 12)"), qty: 1, date: shiftDays(-5), notes: "Shells cracked — see waste log", deductions: [] }
     ],
     waste: [
       { id: uid(), item: "Sponge trimmings", qty: "0.4 kg", reason: "Over-baked", cost: 2.1, date: shiftDays(-2) },
@@ -437,14 +466,71 @@ function load() {
   return seed();
 }
 
+const LISTS = ["customers", "products", "ingredients", "orders", "expenses", "tasks", "bakes", "waste", "social"];
+
+/** Brings any earlier save or backup up to the current shape without
+    discarding records. Runs on load and on every import. */
 function migrate(data) {
   const base = seed();
-  // Fill in any keys added by a newer version without touching the user's records.
   for (const key of Object.keys(base)) if (!(key in data)) data[key] = Array.isArray(base[key]) ? [] : base[key];
+  for (const key of LISTS) if (!Array.isArray(data[key])) data[key] = [];
   data.settings = Object.assign({}, base.settings, data.settings || {});
   data.meta = Object.assign({}, base.meta, data.meta || {});
+
+  // Every record needs an id; anything without one would be undeletable.
+  for (const key of LISTS) for (const row of data[key]) if (row && !row.id) row.id = uid();
+
+  if (num(data.schema) < 2) {
+    // v1 stored a single `deposit` number, which booking filled in
+    // automatically. That number was labelled "deposit paid", so treat it as
+    // cash actually received and turn it into a payment record.
+    for (const o of data.orders) {
+      if (!Array.isArray(o.payments)) {
+        const paidAmount = o.status === "paid" ? num(o.total) : num(o.deposit);
+        o.payments = paidAmount > 0
+          ? [{ id: uid(), amount: round2(paidAmount), date: o.date || todayISO(), note: "Imported from earlier version" }]
+          : [];
+      }
+      if (o.depositRequired === undefined) {
+        o.depositRequired = ["booked", "quoted", "paid"].includes(o.status)
+          ? round2(num(o.total) * num(data.settings.depositPct) / 100) : 0;
+      }
+      delete o.deposit;
+    }
+  }
+
+  // Shared repairs, applied whatever the version — an edited or truncated
+  // backup should load as far as it sensibly can rather than be rejected.
+  for (const o of data.orders) {
+    if (!Array.isArray(o.payments)) o.payments = [];
+    o.payments = o.payments.filter(pay => pay && num(pay.amount) > 0)
+      .map(pay => ({ id: pay.id || uid(), amount: round2(pay.amount), date: pay.date || o.date || todayISO(), note: pay.note || "" }));
+    o.total = round2(o.total);
+    o.qty = Math.max(1, parseInt(o.qty, 10) || 1);
+    o.depositRequired = clamp(round2(o.depositRequired), 0, num(o.total));
+    o.createdAt = o.createdAt || o.date || todayISO();
+    if (!STATUSES.includes(o.status)) o.status = "enquiry";
+    if (o.costSnapshot && !num(o.costSnapshot.unit)) o.costSnapshot = null;
+  }
+  for (const b of data.bakes) if (!Array.isArray(b.deductions)) b.deductions = [];
+  for (const p of data.products) {
+    if (!Array.isArray(p.recipe)) p.recipe = [];
+    p.recipe = p.recipe.filter(l => l && l.ingredientId && num(l.qty) > 0);
+    if (!Array.isArray(p.allergens)) p.allergens = [];
+  }
   data.schema = SCHEMA;
   return data;
+}
+
+/** Reports what is wrong with a candidate backup, or [] if it will load. */
+function backupProblems(parsed) {
+  const bad = [];
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return ["That file is not a backup."];
+  if (!parsed.schema && !parsed.orders && !parsed.customers) return ["That file is not a Bakery Business OS backup."];
+  if (num(parsed.schema) > SCHEMA) bad.push("It was made by a newer version of the app (file " + parsed.schema + ", this app " + SCHEMA + ").");
+  for (const key of LISTS) if (parsed[key] !== undefined && !Array.isArray(parsed[key])) bad.push('The "' + key + '" section is damaged.');
+  if (parsed.settings !== undefined && (typeof parsed.settings !== "object" || Array.isArray(parsed.settings))) bad.push("The settings section is damaged.");
+  return bad;
 }
 
 let saveTimer = null;
@@ -486,6 +572,9 @@ const money0 = n => cur() + Math.round(Number(n) || 0).toLocaleString();
 
 /* ---------- derived business logic ---------- */
 const byId = (list, id) => (list || []).find(x => x.id === id);
+/** Case-insensitive name match, used to stop accidental duplicates. */
+const sameName = (list, name, skipId) => (list || []).some(x =>
+  x.id !== skipId && String(x.name || "").trim().toLowerCase() === String(name || "").trim().toLowerCase());
 const customerById = id => db.customers.find(c => c.id === id);
 const productById = id => db.products.find(p => p.id === id);
 const customerName = id => (customerById(id) || {}).name || "—";
@@ -517,12 +606,53 @@ function costing(p) {
     marginPct: price > 0 ? ((price - cost) / price) * 100 : 0 };
 }
 
-const orderBalance = o => Math.max(0, num(o.total) - num(o.deposit));
-const isRevenue = o => o.status === "paid" || o.status === "booked";
+/* ---------- the money model ----------
+   An order's agreed price is `total`. `depositRequired` is what the customer
+   was ASKED for up front — a request, not cash. Cash exists only as entries
+   in `payments`, so booking an order can never invent money that nobody paid.
+   Every figure below derives from those three facts, so Orders, Dashboard,
+   invoices, exports and the P&L cannot disagree with each other.           */
+const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
+const paymentsOf = o => (o.payments || []);
+/** Cash actually collected against this order. */
+const receivedOf = o => round2(sum(paymentsOf(o), pay => num(pay.amount)));
+/** Still to collect on the agreed price. */
+const balanceOf = o => round2(Math.max(0, num(o.total) - receivedOf(o)));
+/** Deposit asked for but not yet covered by payments. */
+const depositDue = o => round2(Math.max(0, num(o.depositRequired) - receivedOf(o)));
+/** Committed = the customer has agreed and the sale is on the books.
+    An enquiry or an open quote is not a sale and is never a debt. */
+const isCommitted = o => o.status === "booked" || o.status === "paid";
+const outstandingOf = o => (isCommitted(o) ? balanceOf(o) : 0);
+const isFullyPaid = o => receivedOf(o) >= num(o.total) - 0.005;
+/** A quote expires a set number of days after it was raised — not on the
+    date the cake is wanted, which may be months later. */
+const quoteExpiry = o => iso(new Date(parseISO(o.createdAt || o.date).getTime() +
+  Math.max(1, num(db.settings.quoteValidDays)) * DAY));
+const quoteExpired = o => o.status === "quoted" && daysUntil(quoteExpiry(o)) < 0;
 
-/** Cash actually received: full total once paid, deposit while booked/quoted. */
-const received = o => (o.status === "paid" ? num(o.total) : num(o.deposit));
-const outstanding = o => (o.status === "paid" ? 0 : o.status === "booked" ? orderBalance(o) : 0);
+/** Cost of making one unit, frozen at the moment an order is committed, so
+    later ingredient price rises cannot rewrite last quarter's profit. */
+function snapshotCost(p) {
+  const c = costing(p);
+  return { ing: round2(c.ing), labour: round2(p.labour), overhead: round2(p.overhead),
+    unit: round2(c.cost), productName: p.name, at: todayISO() };
+}
+/** Cost of goods for an order: the snapshot if it has one, else live cost. */
+function orderCost(o) {
+  const qty = num(o.qty) || 1;
+  if (o.costSnapshot) return round2(num(o.costSnapshot.unit) * qty);
+  const p = productById(o.productId);
+  return p ? round2(costing(p).cost * qty) : 0;
+}
+/** Records cash against an order. The only way money enters the system. */
+function addPayment(o, amount, date, note) {
+  const amt = round2(amount);
+  if (!(amt > 0)) return false;
+  o.payments = paymentsOf(o).concat([{ id: uid(), amount: amt, date: date || todayISO(), note: note || "" }]);
+  if (isFullyPaid(o) && o.status === "booked") o.status = "paid";
+  return true;
+}
 
 function ingredientStatus(i) {
   const days = i.expiry ? daysUntil(i.expiry) : null;
@@ -538,15 +668,19 @@ const lowStock = () => db.ingredients.filter(i => ["low", "out"].includes(ingred
 const expiringSoon = () => db.ingredients.filter(i => ["expiring", "expired"].includes(ingredientStatus(i).key));
 
 /** Revenue, expenses and profit for a given YYYY-MM. */
+/** One month on two bases, kept deliberately separate:
+    accrual (booked sales, cost of goods, expenses, profit) and cash
+    (what was actually received in the month, and what is still owed). */
 function monthStats(key) {
-  const orders = db.orders.filter(o => monthKey(o.date) === key && isRevenue(o));
-  const revenue = sum(orders, o => num(o.total));
-  const expenses = sum(db.expenses.filter(e => monthKey(e.date) === key), e => num(e.amount));
-  const ingredientCost = sum(orders, o => {
-    const p = productById(o.productId);
-    return p ? costing(p).cost * num(o.qty || 1) : 0;
-  });
-  return { key, revenue, expenses, ingredientCost, profit: revenue - expenses - ingredientCost, count: orders.length };
+  const orders = db.orders.filter(o => monthKey(o.date) === key && isCommitted(o));
+  const bookedSales = round2(sum(orders, o => num(o.total)));
+  const cogs = round2(sum(orders, orderCost));
+  const expenses = round2(sum(db.expenses.filter(e => monthKey(e.date) === key), e => num(e.amount)));
+  const cashReceived = round2(sum(db.orders, o =>
+    sum(paymentsOf(o).filter(pay => monthKey(pay.date) === key), pay => num(pay.amount))));
+  return { key, bookedSales, cogs, expenses, cashReceived,
+    outstanding: round2(sum(orders, outstandingOf)),
+    profit: round2(bookedSales - cogs - expenses), count: orders.length };
 }
 
 function lastMonths(n) {
@@ -568,8 +702,10 @@ function alerts() {
     out.push({ level: "critical", text: d <= 0 ? i.name + " expired " + Math.abs(d) + " day" + (Math.abs(d) === 1 ? "" : "s") + " ago" : i.name + " expires in " + d + " day" + (d === 1 ? "" : "s") });
   }
   for (const o of db.orders) {
-    if (o.status === "booked" && daysUntil(o.date) < 0 && orderBalance(o) > 0)
-      out.push({ level: "critical", text: customerName(o.customerId) + " — " + money(orderBalance(o)) + " balance overdue" });
+    if (o.status === "booked" && daysUntil(o.date) < 0 && balanceOf(o) > 0)
+      out.push({ level: "critical", text: customerName(o.customerId) + " — " + money(balanceOf(o)) + " balance overdue" });
+    if (o.status === "booked" && depositDue(o) > 0 && daysUntil(o.date) <= 7)
+      out.push({ level: "soon", text: customerName(o.customerId) + " — " + money(depositDue(o)) + " deposit not yet received" });
   }
   for (const i of lowStock()) {
     const s = ingredientStatus(i);
@@ -577,8 +713,12 @@ function alerts() {
   }
   for (const o of db.orders) {
     const d = daysUntil(o.date);
-    if (o.status === "quoted" && d >= 0 && d <= 3)
-      out.push({ level: "soon", text: "Quote for " + customerName(o.customerId) + " is unconfirmed — needed " + (d === 0 ? "today" : "in " + d + " day" + (d === 1 ? "" : "s")) });
+    if (o.status === "quoted") {
+      const left = daysUntil(quoteExpiry(o));
+      if (left < 0) out.push({ level: "critical", text: "Quote for " + customerName(o.customerId) + " expired " + Math.abs(left) + " day" + (Math.abs(left) === 1 ? "" : "s") + " ago" });
+      else if (left <= 3) out.push({ level: "soon", text: "Quote for " + customerName(o.customerId) + " expires " + (left === 0 ? "today" : "in " + left + " day" + (left === 1 ? "" : "s")) });
+      else if (d >= 0 && d <= 3) out.push({ level: "soon", text: "Quote for " + customerName(o.customerId) + " is unconfirmed — needed " + (d === 0 ? "today" : "in " + d + " day" + (d === 1 ? "" : "s")) });
+    }
   }
   for (const t of db.tasks) {
     if (!t.done && t.due && daysUntil(t.due) < 0) out.push({ level: "soon", text: "Task overdue: " + t.text });
@@ -675,6 +815,8 @@ function confirmDo(title, message, label, fn) {
   ]);
 }
 let pendingConfirm = null;
+/** Holds the data a restore replaced, so it can be put back. */
+let undoSnapshot = null;
 
 /* ---------- forms ---------- */
 /** The [data-form] block `el` belongs to. Buttons in a dialog's action
@@ -711,8 +853,15 @@ const selectOf = (name, options, selected, placeholder) =>
     (placeholder ? '<option value="">' + esc(placeholder) + '</option>' : "") +
     options.map(o => '<option value="' + esc(o.value) + '"' + (o.value === selected ? " selected" : "") + '>' + esc(o.label) + '</option>').join("") +
   '</select>';
-const customerOptions = () => db.customers.slice().sort((a, b) => a.name.localeCompare(b.name)).map(c => ({ value: c.id, label: c.name }));
-const productOptions = () => db.products.map(p => ({ value: p.id, label: p.name }));
+/** Pickers hide archived records, except the one already chosen — so an
+    order that refers to an archived product still shows it correctly. */
+const customerOptions = keep => db.customers
+  .filter(c => !c.archived || c.id === keep).slice()
+  .sort((a, b) => a.name.localeCompare(b.name))
+  .map(c => ({ value: c.id, label: c.name + (c.archived ? " (archived)" : "") }));
+const productOptions = keep => db.products
+  .filter(p => !p.archived || p.id === keep)
+  .map(p => ({ value: p.id, label: p.name + (p.archived ? " (archived)" : "") }));
 
 /* ---------- shared view pieces ---------- */
 const header = (title, sub) => '<h1 class="page-title">' + esc(title) + '</h1><p class="page-sub">' + esc(sub) + '</p>';
@@ -772,13 +921,13 @@ VIEWS.dashboard = function () {
   const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
   const prev = monthStats(iso(d).slice(0, 7));
   const cur_ = monthStats(thisKey);
-  const monthOrders = db.orders.filter(o => monthKey(o.date) === thisKey && isRevenue(o));
-  const avg = monthOrders.length ? cur_.revenue / monthOrders.length : 0;
-  const prevOrders = db.orders.filter(o => monthKey(o.date) === prev.key && isRevenue(o));
-  const prevAvg = prevOrders.length ? prev.revenue / prevOrders.length : 0;
-  const owed = sum(db.orders, outstanding);
+  const monthOrders = db.orders.filter(o => monthKey(o.date) === thisKey && isCommitted(o));
+  const avg = monthOrders.length ? cur_.bookedSales / monthOrders.length : 0;
+  const prevOrders = db.orders.filter(o => monthKey(o.date) === prev.key && isCommitted(o));
+  const prevAvg = prevOrders.length ? prev.bookedSales / prevOrders.length : 0;
+  const owed = round2(sum(db.orders, outstandingOf));
   const goal = num(db.settings.monthlyGoal);
-  const goalPct = goal > 0 ? clamp(Math.round((cur_.revenue / goal) * 100), 0, 999) : 0;
+  const goalPct = goal > 0 ? clamp(Math.round((cur_.bookedSales / goal) * 100), 0, 999) : 0;
 
   const delta = (now, before, asMoney) => {
     if (!before) return { cls: "flat", text: before === 0 && now > 0 ? "First revenue this month" : "No comparison yet" };
@@ -787,7 +936,8 @@ VIEWS.dashboard = function () {
     const shown = asMoney ? money(Math.abs(diff)) : Math.abs(pct) + "%";
     return { cls: diff >= 0 ? "up" : "down", text: (diff >= 0 ? "+" : "\u2212") + shown + " vs last month" };
   };
-  const dRev = delta(cur_.revenue, prev.revenue), dAvg = delta(avg, prevAvg, true), dProfit = delta(cur_.profit, prev.profit);
+  const dRev = delta(cur_.bookedSales, prev.bookedSales), dAvg = delta(avg, prevAvg, true),
+    dProfit = delta(cur_.profit, prev.profit), dCash = delta(cur_.cashReceived, prev.cashReceived);
 
   const kpi = (label, value, sub) =>
     '<div class="card"><div class="kpi-label">' + esc(label) + '</div><div class="kpi-value num">' + esc(value) + '</div>' +
@@ -810,12 +960,13 @@ VIEWS.dashboard = function () {
 
   return header("Dashboard", "See your bakery at a glance.") +
     '<div class="grid kpis mb">' +
-      kpi("Revenue this month", money0(cur_.revenue), dRev) +
-      kpi("Avg order value", money0(avg), dAvg) +
-      kpi("Net profit", money0(cur_.profit), dProfit) +
-      '<div class="card"><div class="kpi-label">Outstanding payments</div>' +
+      kpi("Booked sales this month", money0(cur_.bookedSales), dRev) +
+      kpi("Cash received this month", money0(cur_.cashReceived), dCash) +
+      kpi("Net profit this month", money0(cur_.profit), dProfit) +
+      '<div class="card"><div class="kpi-label">Outstanding</div>' +
         '<div class="kpi-value num" style="color:var(--amber)">' + money0(owed) + '</div>' +
-        '<div class="kpi-sub flat">Owed by customers</div></div>' +
+        '<div class="kpi-sub flat">Owed on booked orders</div></div>' +
+      kpi("Avg order value", money0(avg), dAvg) +
     '</div>' +
 
     '<section class="card mb"><div class="card-title">Today&rsquo;s priority</div>' +
@@ -833,13 +984,13 @@ VIEWS.dashboard = function () {
     '</section>' +
 
     '<div class="grid wide-narrow">' +
-      card("Revenue by category (this month)",
+      card("Booked sales by category (this month)",
         catRows.length ? barChart(catRows, 190) : emptyRow("No revenue logged this month yet.")) +
       '<div class="stack">' +
         '<section class="card">' +
           '<div class="row between strong" style="margin-bottom:10px"><span>Monthly goal</span><span class="num">' + goalPct + '%</span></div>' +
           '<div class="progress"><div style="width:' + Math.min(100, goalPct) + '%"></div></div>' +
-          '<div class="hint" style="margin-top:8px">' + money0(cur_.revenue) + ' of ' + money0(goal) + ' target</div>' +
+          '<div class="hint" style="margin-top:8px">' + money0(cur_.bookedSales) + ' of ' + money0(goal) + ' target</div>' +
         '</section>' +
         '<section class="card"><div class="card-title">Quick actions</div><div class="stack" style="gap:8px">' +
           '<button class="btn block" data-act="go" data-view="orders">Add an enquiry</button>' +
@@ -861,7 +1012,7 @@ VIEWS.calendar = function () {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells = Math.ceil((startPad + daysInMonth) / 7) * 7;
   const monthOrders = db.orders.filter(o => monthKey(o.date) === iso(first).slice(0, 7));
-  const revenue = sum(monthOrders.filter(isRevenue), o => num(o.total));
+  const revenue = round2(sum(monthOrders.filter(isCommitted), o => num(o.total)));
 
   let grid = "";
   for (let i = 0; i < cells; i++) {
@@ -882,7 +1033,7 @@ VIEWS.calendar = function () {
   const upcoming = db.orders.filter(o => daysUntil(o.date) >= 0 && o.status !== "paid")
     .sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6);
 
-  return header("Order calendar", MONTHS[month] + " " + year + " · " + monthOrders.length + " order" + (monthOrders.length === 1 ? "" : "s") + " · " + money0(revenue) + " booked") +
+  return header("Order calendar", MONTHS[month] + " " + year + " · " + monthOrders.length +  " order" + (monthOrders.length === 1 ? "" : "s") + " · " + money0(revenue) + " booked") +
     '<div class="row between mb">' +
       '<div class="row">' +
         '<button class="btn neutral sm" data-act="calMove" data-by="-1">&larr; Prev</button>' +
@@ -930,13 +1081,16 @@ VIEWS.orders = function () {
     return '<div class="kan-col" data-drop="' + s + '">' +
       '<div class="kan-head"><span>' + STATUS_LABEL[s] + '</span><span class="count">' + list.length + '</span></div>' +
       (list.length ? list.map(o => {
-        const bal = orderBalance(o);
+        const bal = balanceOf(o);
+        const got = receivedOf(o);
         const balLabel = o.status === "paid" ? money(o.total) + " settled"
-          : o.status === "booked" ? money(bal) + " outstanding"
+          : o.status === "booked" ? (got > 0 ? money(got) + " in, " + money(bal) + " due" : money(bal) + " due, nothing paid")
           : money(o.total) + " estimate";
         return '<div class="kan-card" draggable="true" data-id="' + o.id + '" data-act="openOrder">' +
           '<div class="name">' + esc(customerName(o.customerId)) + '</div>' +
           '<div class="detail">' + esc(productName(o.productId)) + (num(o.qty) > 1 ? " ×" + o.qty : "") + ' · ' + fmtDate(o.date) + '</div>' +
+          (o.status === "quoted" ? '<div class="detail" style="color:' + (quoteExpired(o) ? "var(--red)" : "var(--ink-60)") + '">' +
+            (quoteExpired(o) ? "Quote expired " + fmtDate(quoteExpiry(o)) : "Quote valid to " + fmtDate(quoteExpiry(o))) + '</div>' : "") +
           '<div class="bal" style="color:' + (o.status === "paid" ? "var(--green)" : bal > 0 ? "var(--amber)" : "var(--ink-60)") + '">' +
             balLabel + '</div>' +
           (s !== "paid" ? '<button class="btn ghost sm" style="margin-top:8px" data-act="advance" data-id="' + o.id + '">Move to ' + STATUS_LABEL[STATUSES[STATUSES.indexOf(s) + 1]] + '</button>' : "") +
@@ -973,15 +1127,20 @@ VIEWS.orders = function () {
         '</div>' +
       '</div>' +
       '<div class="table-wrap">' +
-        '<div class="thead" style="grid-template-columns:' + cols5 + '"><span>Customer</span><span>Product</span><span>Qty</span><span>Date</span><span>Total</span><span>Status</span><span></span></div>' +
+        '<div class="thead" style="grid-template-columns:' + cols5 + '"><span>Customer</span><span>Product</span><span>Qty</span><span>Date</span><span>Total / received</span><span>Status</span><span></span></div>' +
         (rows.length ? rows.map(o =>
           '<div class="trow clickable" style="grid-template-columns:' + cols5 + '" data-act="openOrder" data-id="' + o.id + '">' +
             '<span class="strong">' + esc(customerName(o.customerId)) + '</span>' +
             '<span class="muted">' + esc(productName(o.productId)) + '</span>' +
             '<span class="muted num">' + esc(o.qty || 1) + '</span>' +
             '<span class="muted">' + fmtDate(o.date) + '</span>' +
-            '<span class="strong num">' + money(o.total) + '</span>' +
-            '<span>' + pill(STATUS_LABEL[o.status], STATUS_TONE[o.status]) + '</span>' +
+            '<span class="strong num">' + money(o.total) +
+              (receivedOf(o) > 0 || isCommitted(o)
+                ? '<br><span class="hint">' + money(receivedOf(o)) + ' in' +
+                  (outstandingOf(o) > 0 ? ' · ' + money(outstandingOf(o)) + ' due' : "") + '</span>'
+                : "") + '</span>' +
+            '<span>' + pill(STATUS_LABEL[o.status], STATUS_TONE[o.status]) +
+              (quoteExpired(o) ? '<br>' + pill("Expired", "red") : "") + '</span>' +
             '<span class="row" style="gap:2px;flex-wrap:nowrap">' +
               '<button class="icon-btn" style="color:var(--accent)" data-act="printQuote" data-id="' + o.id + '" title="Print quote / invoice">&#9113;</button>' +
               delBtn("deleteOrder", o.id, "Delete order") +
@@ -991,29 +1150,60 @@ VIEWS.orders = function () {
     '</section>';
 };
 
-/** Order detail dialog — edit everything about one order. */
+/** Order detail dialog — edit the order, and record cash against it.
+    Payments are their own records: they survive status changes in both
+    directions and are the single source of every "received" figure. */
 function openOrderModal(id) {
   const o = db.orders.find(x => x.id === id);
   if (!o) return;
-  const bal = orderBalance(o);
+  const bal = balanceOf(o), got = receivedOf(o), pays = paymentsOf(o);
+  const archivedNote = c => (c && c.archived ? " (archived)" : "");
+  const custOpts = customerOptions(o.customerId), prodOpts = productOptions(o.productId);
+
   modal(customerName(o.customerId), productName(o.productId) + " · " + fmtLongDate(o.date),
     '<div data-form="editOrder" data-id="' + o.id + '">' +
       '<div class="form-grid" style="grid-template-columns:1fr 1fr">' +
-        field("Customer", selectOf("customerId", customerOptions(), o.customerId)) +
-        field("Product", selectOf("productId", productOptions(), o.productId)) +
+        field("Customer", selectOf("customerId", custOpts, o.customerId)) +
+        field("Product", selectOf("productId", prodOpts, o.productId)) +
         field("Quantity", '<input type="number" min="1" step="1" data-f="qty" value="' + esc(o.qty || 1) + '">') +
         field("Date needed", '<input type="date" data-f="date" value="' + esc(o.date) + '">') +
         field("Total " + cur(), '<input type="number" min="0" step="0.01" data-f="total" value="' + esc(o.total) + '">') +
-        field("Deposit paid " + cur(), '<input type="number" min="0" step="0.01" data-f="deposit" value="' + esc(o.deposit) + '">') +
-        field("Status", selectOf("status", STATUSES.map(s => ({ value: s, label: STATUS_LABEL[s] })), o.status)) +
-        field("Balance", '<input value="' + money(bal) + '" disabled>') +
+        field("Deposit required " + cur(), '<input type="number" min="0" step="0.01" data-f="depositRequired" value="' + esc(num(o.depositRequired)) + '">') +
+        field("Status", selectOf("status", STATUSES.map(st => ({ value: st, label: STATUS_LABEL[st] })), o.status)) +
+        field("Balance outstanding", '<input value="' + money(bal) + '" disabled>') +
       '</div>' +
-      field("Notes", '<textarea data-f="notes" rows="3" placeholder="Flavour, inscription, delivery details…">' + esc(o.notes) + '</textarea>') +
-      '<div class="row" style="margin-top:14px">' +
+      field("Notes", '<textarea data-f="notes" rows="2" placeholder="Flavour, inscription, delivery details…">' + esc(o.notes) + '</textarea>') +
+
+      '<div style="margin:18px 0 0;border-top:1px solid var(--line);padding-top:16px">' +
+        '<div class="row between" style="margin-bottom:10px">' +
+          '<span class="strong" style="font-size:14px">Payments received</span>' +
+          '<span class="hint">' + money(got) + ' of ' + money(o.total) +
+            (num(o.depositRequired) > 0 ? ' · deposit ' + (depositDue(o) > 0 ? money(depositDue(o)) + ' still due' : 'covered') : "") + '</span>' +
+        '</div>' +
+        (pays.length ? pays.slice().sort((a, b) => a.date.localeCompare(b.date)).map(pay =>
+          '<div class="row between" style="padding:7px 0;border-bottom:1px solid var(--line)">' +
+            '<span style="font-size:14px">' + money(pay.amount) + '<span class="hint"> · ' + fmtDate(pay.date) +
+              (pay.note ? ' · ' + esc(pay.note) : "") + '</span></span>' +
+            '<button class="icon-btn" data-act="deletePayment" data-id="' + o.id + '" data-pay="' + pay.id + '">&#10005;</button>' +
+          '</div>').join("")
+          : '<p class="hint" style="margin:0 0 8px">No money received yet.</p>') +
+        '<div class="form-grid" style="grid-template-columns:1fr 1fr auto;margin-top:12px">' +
+          field("Amount " + cur(), '<input type="number" min="0" step="0.01" data-f="payAmount" placeholder="' + esc(bal > 0 ? bal : 0) + '">') +
+          field("Received on", '<input type="date" data-f="payDate" value="' + todayISO() + '">') +
+          '<button class="btn primary" data-act="addPayment" data-id="' + o.id + '">Record</button>' +
+        '</div>' +
+        '<div class="row" style="margin-top:12px">' +
+          (depositDue(o) > 0 ? '<button class="btn ghost sm" data-act="payDeposit" data-id="' + o.id + '">Record deposit ' + money(depositDue(o)) + '</button>' : "") +
+          (bal > 0 ? '<button class="btn ghost sm" data-act="markPaid" data-id="' + o.id + '">Record balance ' + money(bal) + '</button>' : "") +
+        '</div>' +
+      '</div>' +
+
+      '<div class="row" style="margin-top:16px">' +
         '<button class="btn ghost sm" data-act="printQuote" data-id="' + o.id + '">Print quote</button>' +
         '<button class="btn ghost sm" data-act="printInvoice" data-id="' + o.id + '">Print invoice</button>' +
-        (bal > 0 ? '<button class="btn ghost sm" data-act="markPaid" data-id="' + o.id + '">Mark fully paid</button>' : "") +
       '</div>' +
+      (o.costSnapshot ? '<p class="hint" style="margin:12px 0 0">Cost locked at ' + money(o.costSnapshot.unit) +
+        ' per unit on ' + fmtLongDate(o.costSnapshot.at) + ' — later ingredient price changes will not alter this order.</p>' : "") +
     '</div>',
     [{ label: "Delete", act: "deleteOrder", cls: "danger", data: ' data-id="' + o.id + '"' },
      { label: "Cancel", act: "closeModal" },
@@ -1026,11 +1216,13 @@ function openOrderModal(id) {
 VIEWS.customers = function () {
   const stats = c => {
     const list = db.orders.filter(o => o.customerId === c.id);
-    return { list, count: list.length, spend: sum(list.filter(o => o.status === "paid"), o => num(o.total)) };
+    // Cash actually received from them — the same basis the export uses.
+    return { list, count: list.length, spend: round2(sum(list, receivedOf)) };
   };
   const rows = db.customers
     .map(c => Object.assign({ c }, stats(c)))
-    .sort((a, b) => b.spend - a.spend);
+    .sort((a, b) => (a.c.archived ? 1 : 0) - (b.c.archived ? 1 : 0) || b.spend - a.spend);
+  const archivedCount = db.customers.filter(c => c.archived).length;
   const grid = "1.5fr 1.6fr 1fr .7fr 1fr 40px";
 
   return header("Customers", "Lifetime value, tracked automatically.") +
@@ -1044,17 +1236,19 @@ VIEWS.customers = function () {
       '</div>' +
     '</section>' +
     '<section class="card"><div class="table-wrap">' +
-      '<div class="thead" style="grid-template-columns:' + grid + '"><span>Name</span><span>Email</span><span>Phone</span><span>Orders</span><span>Lifetime spend</span><span></span></div>' +
+      '<div class="thead" style="grid-template-columns:' + grid + '"><span>Name</span><span>Email</span><span>Phone</span><span>Orders</span><span>Paid to date</span><span></span></div>' +
       (rows.length ? rows.map(r => {
         const open = ui.openCustomer === r.c.id;
         return '<div>' +
           '<div class="trow clickable" style="grid-template-columns:' + grid + '" data-act="toggleCustomer" data-id="' + r.c.id + '">' +
-            '<span class="strong">' + esc(r.c.name) + '</span>' +
+            '<span class="strong">' + esc(r.c.name) + (r.c.archived ? ' ' + pill("Archived", "grey") : "") + '</span>' +
             '<span class="muted">' + esc(r.c.email || "—") + '</span>' +
             '<span class="muted">' + esc(r.c.phone || "—") + '</span>' +
             '<span class="muted num">' + r.count + '</span>' +
             '<span class="strong num">' + money(r.spend) + '</span>' +
-            '<span>' + delBtn("deleteCustomer", r.c.id, "Delete customer") + '</span>' +
+            '<span>' + (r.c.archived
+              ? '<button class="btn ghost sm" data-act="restoreCustomer" data-id="' + r.c.id + '">Restore</button>'
+              : delBtn("deleteCustomer", r.c.id, "Delete or archive customer")) + '</span>' +
           '</div>' +
           (open ? '<div style="background:var(--bg);border-radius:10px;padding:16px 18px;margin:8px 0">' +
             '<div class="row between" style="margin-bottom:10px">' +
@@ -1070,6 +1264,8 @@ VIEWS.customers = function () {
           '</div>' : "") +
         '</div>';
       }).join("") : emptyRow("No customers yet — add your first above.")) +
+      (archivedCount ? '<p class="hint" style="margin:14px 0 0">' + archivedCount +
+        ' archived customer' + (archivedCount === 1 ? "" : "s") + ' kept for their order history.</p>' : "") +
     '</div></section>';
 };
 
@@ -1095,7 +1291,7 @@ function openCustomerModal(id) {
 VIEWS.products = function () {
   const grid = "1.6fr .9fr .9fr .9fr .8fr 96px";
   const agrid = "1.6fr repeat(" + ALLERGENS.length + ",1fr)";
-  const sold = id => sum(db.orders.filter(o => o.productId === id && isRevenue(o)), o => num(o.qty || 1));
+  const sold = id => sum(db.orders.filter(o => o.productId === id && isCommitted(o)), o => num(o.qty || 1));
 
   return header("Products, recipe costing & allergens", "Know your cost before you bake.") +
     '<section class="card mb" data-form="product">' +
@@ -1122,18 +1318,22 @@ VIEWS.products = function () {
 
     '<section class="card mb"><div class="card-title">Products</div><div class="table-wrap">' +
       '<div class="thead" style="grid-template-columns:' + grid + '"><span>Product</span><span>Unit cost</span><span>Price</span><span>Profit</span><span>Sold</span><span></span></div>' +
-      (db.products.length ? db.products.map(p => {
+      (db.products.length ? db.products.slice()
+        .sort((a, b) => (a.archived ? 1 : 0) - (b.archived ? 1 : 0)).map(p => {
         const c = costing(p);
         return '<div class="trow" style="grid-template-columns:' + grid + '">' +
-          '<span><span class="strong">' + esc(p.name) + '</span>' + (p.category ? '<br><span class="hint">' + esc(p.category) + '</span>' : "") + '</span>' +
+          '<span><span class="strong">' + esc(p.name) + '</span>' + (p.archived ? ' ' + pill("Archived", "grey") : "") +
+            (p.category ? '<br><span class="hint">' + esc(p.category) + '</span>' : "") + '</span>' +
           '<span class="muted num">' + money(c.cost) +
             (c.fromRecipe ? '<br><span class="hint">' + (p.recipe || []).length + ' ingredients</span>' : "") + '</span>' +
           '<span class="strong num">' + money(c.price) + '</span>' +
           '<span class="strong num" style="color:var(--green)">' + money(c.profit) + ' <span class="hint">(' + Math.round(c.marginPct) + '%)</span></span>' +
           '<span class="muted num">' + sold(p.id) + '</span>' +
           '<span class="row" style="gap:2px;flex-wrap:nowrap">' +
-            '<button class="btn ghost sm" data-act="editProduct" data-id="' + p.id + '">Edit</button>' +
-            delBtn("deleteProduct", p.id, "Delete product") +
+            (p.archived
+              ? '<button class="btn ghost sm" data-act="restoreProduct" data-id="' + p.id + '">Restore</button>'
+              : '<button class="btn ghost sm" data-act="editProduct" data-id="' + p.id + '">Edit</button>' +
+                delBtn("deleteProduct", p.id, "Delete or archive product")) +
           '</span>' +
         '</div>';
       }).join("") : emptyRow("No products yet — add your first recipe above.")) +
@@ -1144,7 +1344,7 @@ VIEWS.products = function () {
         '<div class="table-wrap">' +
           '<div class="thead" style="grid-template-columns:' + agrid + '"><span>Product</span>' +
             ALLERGENS.map(a => '<span style="text-align:center">' + esc(a) + '</span>').join("") + '</div>' +
-          (db.products.length ? db.products.map(p =>
+          (db.products.length ? db.products.filter(p => !p.archived).map(p =>
             '<div class="trow" style="grid-template-columns:' + agrid + '">' +
               '<span class="strong">' + esc(p.name) + '</span>' +
               ALLERGENS.map(a => (p.allergens || []).includes(a)
@@ -1156,7 +1356,7 @@ VIEWS.products = function () {
       card("Print allergen labels",
         '<p class="hint" style="margin-top:0">Ready-to-cut labels with product name, weight and a CONTAINS line — for market stalls and boxes.</p>' +
         '<div data-form="labels" class="stack" style="gap:10px">' +
-          field("Product", selectOf("productId", productOptions(), "", "All products")) +
+          field("Product", selectOf("productId", productOptions(), "", "All active products")) +
           field("Net weight (optional)", input("weight", 'placeholder="120g"')) +
           field("Labels per product", input("copies", 'type="number" min="1" max="40" value="6"')) +
           '<button class="btn block" data-act="printLabels">Print labels</button>' +
@@ -1311,12 +1511,15 @@ VIEWS.inventory = function () {
    Module: Payments, expenses & P&L
    ============================================================ */
 VIEWS.payments = function () {
-  const totalReceived = sum(db.orders, received);
-  const totalOutstanding = sum(db.orders, outstanding);
-  const expected = sum(db.orders.filter(o => ["quoted", "enquiry"].includes(o.status)), o => num(o.total));
-  const totalExpenses = sum(db.expenses, e => num(e.amount));
+  const committed = db.orders.filter(isCommitted);
+  const bookedSales = round2(sum(committed, o => num(o.total)));
+  const totalReceived = round2(sum(db.orders, receivedOf));
+  const totalOutstanding = round2(sum(db.orders, outstandingOf));
+  const expected = round2(sum(db.orders.filter(o => ["quoted", "enquiry"].includes(o.status)), o => num(o.total)));
+  const totalExpenses = round2(sum(db.expenses, e => num(e.amount)));
+  const totalCogs = round2(sum(committed, orderCost));
   const months = lastMonths(6);
-  const net = totalReceived - totalExpenses;
+  const net = round2(bookedSales - totalCogs - totalExpenses);
   const grid = "1.6fr 1.2fr 1fr .9fr 40px";
 
   const stat = (label, value, color) =>
@@ -1325,25 +1528,30 @@ VIEWS.payments = function () {
 
   return header("Payments, expenses & P&L", "Know exactly how the business is doing.") +
     '<div class="grid kpis mb">' +
-      stat("Received", money0(totalReceived), "var(--green)") +
+      stat("Booked sales", money0(bookedSales)) +
+      stat("Cash received", money0(totalReceived), "var(--green)") +
       stat("Outstanding", money0(totalOutstanding), "var(--amber)") +
-      stat("Expected (enquiries + quotes)", money0(expected)) +
-      stat("Total expenses", money0(totalExpenses), "var(--red)") +
+      stat("Expenses + cost of goods", money0(totalExpenses + totalCogs), "var(--red)") +
       '<div class="card dark"><div style="opacity:.6;font-size:14px">Net profit</div>' +
         '<div class="num" style="color:var(--accent);font-size:26px;font-weight:800;margin-top:6px">' + money0(net) + '</div></div>' +
     '</div>' +
+    '<p class="hint" style="margin:-8px 0 20px">Booked sales are orders the customer has agreed to. Cash received is money actually ' +
+      'in your hands. Profit is booked sales less cost of goods (' + money0(totalCogs) + ') and expenses (' + money0(totalExpenses) + ')' +
+      (expected > 0 ? ' — a further ' + money0(expected) + ' sits in open enquiries and quotes.' : '.') + '</p>' +
 
     '<section class="card mb">' +
       '<div class="row between" style="margin-bottom:16px">' +
         '<div class="card-title" style="margin:0">Monthly revenue vs profit</div>' +
-        '<div class="legend"><span><i class="swatch"></i>Revenue</span><span><i class="swatch ink"></i>Profit</span></div>' +
+        '<div class="legend"><span><i class="swatch"></i>Booked sales</span>' +
+          '<span><i class="swatch green"></i>Cash received</span><span><i class="swatch ink"></i>Net profit</span></div>' +
       '</div>' +
       barChart(months.map(m => ({ label: m.label, values: [
-        { v: Math.max(0, m.revenue), title: "Revenue " + money(m.revenue) },
-        { v: Math.max(0, m.profit), cls: "ink", title: "Profit " + money(m.profit) }
+        { v: Math.max(0, m.bookedSales), title: "Booked sales " + money(m.bookedSales) },
+        { v: Math.max(0, m.cashReceived), cls: "green", title: "Cash received " + money(m.cashReceived) },
+        { v: Math.max(0, m.profit), cls: "ink", title: "Net profit " + money(m.profit) }
       ] })), 200) +
       '<div class="row between" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">' +
-        '<span class="hint">Profit = revenue &minus; expenses &minus; ingredient cost of goods sold</span>' +
+        '<span class="hint">Net profit = booked sales &minus; cost of goods &minus; expenses</span>' +
         '<button class="btn ghost sm" data-act="printPL">Print profit &amp; loss</button>' +
       '</div>' +
     '</section>' +
@@ -1373,22 +1581,27 @@ VIEWS.payments = function () {
       '<div class="stack">' +
         card("Awaiting payment",
           (() => {
-            const owed = db.orders.filter(o => outstanding(o) > 0).sort((a, b) => a.date.localeCompare(b.date));
+            const owed = db.orders.filter(o => outstandingOf(o) > 0).sort((a, b) => a.date.localeCompare(b.date));
             return owed.length ? owed.map(o =>
               '<div class="row between" style="padding:9px 0;border-bottom:1px solid var(--line)">' +
                 '<span><span class="strong">' + esc(customerName(o.customerId)) + '</span><br><span class="hint">' + fmtDate(o.date) +
-                  (daysUntil(o.date) < 0 ? ' · overdue' : "") + '</span></span>' +
-                '<span class="row" style="flex-wrap:nowrap"><span class="strong num">' + money(orderBalance(o)) + '</span>' +
+                  (daysUntil(o.date) < 0 ? ' · overdue' : "") +
+                  (receivedOf(o) > 0 ? ' · ' + money(receivedOf(o)) + ' received' : "") + '</span></span>' +
+                '<span class="row" style="flex-wrap:nowrap"><span class="strong num">' + money(balanceOf(o)) + '</span>' +
                 '<button class="btn ghost sm" data-act="markPaid" data-id="' + o.id + '">Paid</button></span>' +
               '</div>').join("") : '<div class="alert green"><span class="dot"></span>Everything is settled.</div>';
           })()) +
         card("This month",
           (() => { const m = monthStats(todayISO().slice(0, 7)); return '' +
-            '<div class="row between" style="padding:6px 0"><span class="muted">Revenue</span><span class="strong num">' + money(m.revenue) + '</span></div>' +
-            '<div class="row between" style="padding:6px 0"><span class="muted">Cost of goods</span><span class="num">' + money(m.ingredientCost) + '</span></div>' +
+            '<div class="row between" style="padding:6px 0"><span class="muted">Booked sales</span><span class="strong num">' + money(m.bookedSales) + '</span></div>' +
+            '<div class="row between" style="padding:6px 0"><span class="muted">Cost of goods</span><span class="num">' + money(m.cogs) + '</span></div>' +
             '<div class="row between" style="padding:6px 0"><span class="muted">Expenses</span><span class="num">' + money(m.expenses) + '</span></div>' +
-            '<div class="row between" style="padding:10px 0 0;border-top:1px solid var(--line);margin-top:6px">' +
-              '<span class="strong">Net profit</span><span class="strong num" style="color:var(--accent)">' + money(m.profit) + '</span></div>'; })()) +
+            '<div class="row between" style="padding:10px 0;border-top:1px solid var(--line);margin-top:6px">' +
+              '<span class="strong">Net profit</span><span class="strong num" style="color:var(--accent)">' + money(m.profit) + '</span></div>' +
+            '<div class="row between" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">Cash received</span>' +
+              '<span class="num" style="color:var(--green)">' + money(m.cashReceived) + '</span></div>' +
+            '<div class="row between" style="padding:6px 0"><span class="muted">Still outstanding</span>' +
+              '<span class="num" style="color:var(--amber)">' + money(m.outstanding) + '</span></div>'; })()) +
       '</div>' +
     '</div>';
 };
@@ -1518,6 +1731,7 @@ VIEWS.settings = function () {
           '<div class="row">' +
             '<button class="btn" data-act="exportBackup">Export backup (.json)</button>' +
             '<label class="btn neutral" style="cursor:pointer">Import backup<input type="file" accept="application/json,.json" data-change="importBackup" style="display:none"></label>' +
+            (undoSnapshot ? '<button class="btn danger" data-act="undoRestore">Undo last restore/reset</button>' : "") +
           '</div>') +
         card("Exports",
           '<p class="muted" style="margin:0 0 14px">Take your data anywhere — nothing is locked in.</p>' +
@@ -1578,11 +1792,11 @@ function orderDoc(o, kind) {
   const qty = num(o.qty) || 1;
   const unit = num(o.total) / qty;
   const isInvoice = kind === "invoice";
-  const dep = num(o.deposit), bal = orderBalance(o);
+  const got = receivedOf(o), bal = balanceOf(o), pays = paymentsOf(o);
   const ref = o.id.slice(-6).toUpperCase();
   const meta = isInvoice
     ? ["Invoice #" + ref, "Issued " + fmtLongDate(todayISO()), "Order date " + fmtLongDate(o.date)]
-    : ["Quote #" + ref, "Issued " + fmtLongDate(todayISO()), "Valid " + num(db.settings.quoteValidDays) + " days"];
+    : ["Quote #" + ref, "Raised " + fmtLongDate(o.createdAt || o.date), "Valid until " + fmtLongDate(quoteExpiry(o))];
 
   return '<div class="doc">' + docHead(isInvoice ? "Invoice" : "Quote", c.name, meta) +
     '<table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Unit</th><th class="r">Amount</th></tr></thead><tbody>' +
@@ -1592,13 +1806,20 @@ function orderDoc(o, kind) {
       '</td><td class="r">' + qty + '</td><td class="r">' + money(unit) + '</td><td class="r">' + money(o.total) + '</td></tr>' +
     '</tbody></table>' +
     (isInvoice
-      ? '<div style="display:flex;justify-content:space-between;padding:8px 4px"><span>Deposit received</span><span>' + money(dep) + '</span></div>' +
+      ? (pays.length
+          ? pays.slice().sort((a, b) => a.date.localeCompare(b.date)).map(pay =>
+              '<div style="display:flex;justify-content:space-between;padding:6px 4px"><span>Payment received ' +
+              fmtLongDate(pay.date) + (pay.note ? ' — ' + esc(pay.note) : "") + '</span><span>' + money(pay.amount) + '</span></div>').join("") +
+            '<div style="display:flex;justify-content:space-between;padding:6px 4px;border-top:1px solid #E8DED0"><span>Total received</span><span>' + money(got) + '</span></div>'
+          : '<div style="display:flex;justify-content:space-between;padding:6px 4px"><span>Received to date</span><span>' + money(0) + '</span></div>') +
         '<div class="doc-total"><span>Balance due</span><span>' + money(bal) + '</span></div>'
-      : '<div style="display:flex;justify-content:space-between;padding:8px 4px"><span>Deposit to secure your date (' + num(db.settings.depositPct) + '%)</span><span>' +
-          money(num(o.total) * num(db.settings.depositPct) / 100) + '</span></div>' +
+      : '<div style="display:flex;justify-content:space-between;padding:8px 4px"><span>Deposit to secure your date</span><span>' +
+          money(num(o.depositRequired) || round2(num(o.total) * num(db.settings.depositPct) / 100)) + '</span></div>' +
+        (got > 0 ? '<div style="display:flex;justify-content:space-between;padding:6px 4px"><span>Already received</span><span>' + money(got) + '</span></div>' : "") +
         '<div class="doc-total"><span>Total</span><span>' + money(o.total) + '</span></div>') +
     '<div class="doc-note">' + esc(db.settings.terms || "") +
-      (isInvoice && bal <= 0 ? '<br><strong style="color:#3F8A5C">Paid in full — thank you!</strong>' : "") +
+      (!isInvoice ? '<br>This quote is valid until ' + fmtLongDate(quoteExpiry(o)) + '.' : "") +
+      (isInvoice && bal <= 0 && num(o.total) > 0 ? '<br><strong style="color:#3F8A5C">Paid in full — thank you!</strong>' : "") +
     '</div></div>';
 }
 
@@ -1652,7 +1873,7 @@ function shoppingListDoc() {
 }
 
 function labelsDoc(productId, weight, copies) {
-  const list = productId ? [productById(productId)].filter(Boolean) : db.products;
+  const list = productId ? [productById(productId)].filter(Boolean) : db.products.filter(p => !p.archived);
   const n = clamp(parseInt(copies, 10) || 6, 1, 40);
   let cells = "";
   for (const p of list) {
@@ -1670,19 +1891,28 @@ function labelsDoc(productId, weight, copies) {
 
 function plDoc() {
   const months = lastMonths(12);
-  const tot = months.reduce((a, m) => ({
-    revenue: a.revenue + m.revenue, expenses: a.expenses + m.expenses,
-    ingredientCost: a.ingredientCost + m.ingredientCost, profit: a.profit + m.profit
-  }), { revenue: 0, expenses: 0, ingredientCost: 0, profit: 0 });
+  const add = (a, m) => ({
+    bookedSales: a.bookedSales + m.bookedSales, expenses: a.expenses + m.expenses,
+    cogs: a.cogs + m.cogs, profit: a.profit + m.profit, cashReceived: a.cashReceived + m.cashReceived
+  });
+  const tot = months.reduce(add, { bookedSales: 0, expenses: 0, cogs: 0, profit: 0, cashReceived: 0 });
+  const owed = round2(sum(db.orders, outstandingOf));
   return '<div class="doc">' + docHead("Profit & loss", "Last 12 months", ["Printed " + fmtLongDate(todayISO())]) +
-    '<table><thead><tr><th>Month</th><th class="r">Orders</th><th class="r">Revenue</th><th class="r">Cost of goods</th><th class="r">Expenses</th><th class="r">Net profit</th></tr></thead><tbody>' +
-    months.map(m => '<tr><td>' + m.label + " " + m.year + '</td><td class="r">' + m.count + '</td><td class="r">' + money(m.revenue) +
-      '</td><td class="r">' + money(m.ingredientCost) + '</td><td class="r">' + money(m.expenses) +
-      '</td><td class="r"><strong>' + money(m.profit) + '</strong></td></tr>').join("") +
+    '<table style="font-size:13px"><thead><tr><th>Month</th><th class="r">Orders</th><th class="r">Booked sales</th>' +
+      '<th class="r">Cost of goods</th><th class="r">Expenses</th><th class="r">Net profit</th><th class="r">Cash received</th></tr></thead><tbody>' +
+    months.map(m => '<tr><td>' + m.label + " " + m.year + '</td><td class="r">' + m.count + '</td><td class="r">' + money(m.bookedSales) +
+      '</td><td class="r">' + money(m.cogs) + '</td><td class="r">' + money(m.expenses) +
+      '</td><td class="r"><strong>' + money(m.profit) + '</strong></td><td class="r">' + money(m.cashReceived) + '</td></tr>').join("") +
     '</tbody></table>' +
     '<div class="doc-total"><span>Net profit, 12 months</span><span>' + money(tot.profit) + '</span></div>' +
-    '<div class="doc-note">Revenue counts booked and paid orders. Cost of goods uses each product&rsquo;s recipe cost. ' +
-      'Total revenue ' + money(tot.revenue) + ' · cost of goods ' + money(tot.ingredientCost) + ' · expenses ' + money(tot.expenses) + '.</div></div>';
+    '<div class="doc-note"><strong>How these are counted.</strong> Booked sales are orders the customer has agreed to ' +
+      '(booked or paid), dated by when the order is wanted. Cost of goods is each order&rsquo;s recipe cost, locked at the ' +
+      'moment it was committed, so past months do not move when ingredient prices change. Net profit = booked sales ' +
+      '&minus; cost of goods &minus; expenses. Cash received is money actually taken in the month, which may fall in a ' +
+      'different month from the sale.<br>' +
+      '12-month totals — booked sales ' + money(tot.bookedSales) + ' · cost of goods ' + money(tot.cogs) +
+      ' · expenses ' + money(tot.expenses) + ' · cash received ' + money(tot.cashReceived) +
+      '. Still outstanding across all booked orders: ' + money(owed) + '.</div></div>';
 }
 
 /* ============================================================
@@ -1702,18 +1932,22 @@ const slug = s => String(s || "bakery").toLowerCase().replace(/[^a-z0-9]+/g, "-"
 /** Every table, as [name, headers, rows] — shared by CSV and workbook export. */
 function sheets() {
   return [
-    ["Orders", ["Customer", "Product", "Qty", "Date", "Status", "Total", "Deposit", "Balance", "Notes"],
+    ["Orders", ["Customer", "Product", "Qty", "Date needed", "Raised", "Status", "Total",
+        "Deposit required", "Received", "Outstanding", "Cost of goods", "Notes"],
       db.orders.map(o => [customerName(o.customerId), productName(o.productId), num(o.qty) || 1, o.date,
-        STATUS_LABEL[o.status], num(o.total), num(o.deposit), orderBalance(o), o.notes || ""])],
-    ["Customers", ["Name", "Email", "Phone", "Orders", "Lifetime spend", "Notes"],
+        o.createdAt || o.date, STATUS_LABEL[o.status], num(o.total), num(o.depositRequired),
+        receivedOf(o), outstandingOf(o), orderCost(o), o.notes || ""])],
+    ["Customers", ["Name", "Email", "Phone", "Orders", "Lifetime spend", "Status", "Notes"],
       db.customers.map(c => {
         const list = db.orders.filter(o => o.customerId === c.id);
-        return [c.name, c.email || "", c.phone || "", list.length, sum(list.filter(o => o.status === "paid"), o => num(o.total)), c.notes || ""];
+        return [c.name, c.email || "", c.phone || "", list.length,
+          round2(sum(list, receivedOf)), c.archived ? "Archived" : "Active", c.notes || ""];
       })],
-    ["Products", ["Product", "Category", "Ingredients", "Labour", "Overhead", "Unit cost", "Margin %", "Price", "Profit", "Allergens"],
+    ["Products", ["Product", "Category", "Ingredients", "Labour", "Overhead", "Unit cost", "Margin %", "Price", "Profit", "Allergens", "Status"],
       db.products.map(p => { const c = costing(p);
-        return [p.name, p.category || "", num(p.ingCost), num(p.labour), num(p.overhead), +c.cost.toFixed(2),
-          num(p.margin), +c.price.toFixed(2), +c.profit.toFixed(2), (p.allergens || []).join(", ")]; })],
+        return [p.name, p.category || "", round2(c.ing), num(p.labour), num(p.overhead), round2(c.cost),
+          num(p.margin), round2(c.price), round2(c.profit), (p.allergens || []).join(", "),
+          p.archived ? "Archived" : "Active"]; })],
     ["Recipes", ["Product", "Ingredient", "Qty", "Unit", "Cost per unit", "Line cost"],
       db.products.flatMap(p => recipeLines(p).map(r =>
         [p.name, r.ingredient.name, r.qty, r.ingredient.unit, num(r.ingredient.cost), +(r.qty * num(r.ingredient.cost)).toFixed(2)]))],
@@ -1728,12 +1962,18 @@ function sheets() {
       db.products.map(p => [p.name].concat(ALLERGENS.map(a => ((p.allergens || []).includes(a) ? "YES" : ""))))],
     ["Expenses", ["Category", "Date", "Amount", "Notes"],
       db.expenses.map(e => [e.category, e.date, num(e.amount), e.notes || ""])],
-    ["Payments", ["Customer", "Order date", "Total", "Received", "Outstanding", "Status"],
-      db.orders.map(o => [customerName(o.customerId), o.date, num(o.total), received(o), outstanding(o), STATUS_LABEL[o.status]])],
-    ["Profit and loss", ["Month", "Orders", "Revenue", "Cost of goods", "Expenses", "Net profit"],
-      lastMonths(12).map(m => [m.label + " " + m.year, m.count, +m.revenue.toFixed(2), +m.ingredientCost.toFixed(2), +m.expenses.toFixed(2), +m.profit.toFixed(2)])],
-    ["Bake log", ["Product", "Batches", "Date", "Notes"],
-      db.bakes.map(b => [productName(b.productId), num(b.qty) || 1, b.date, b.notes || ""])],
+    ["Payments", ["Customer", "Order date", "Payment date", "Amount", "Note", "Order total", "Received to date", "Outstanding"],
+      db.orders.flatMap(o => paymentsOf(o).map(pay =>
+        [customerName(o.customerId), o.date, pay.date, num(pay.amount), pay.note || "",
+          num(o.total), receivedOf(o), outstandingOf(o)]))],
+    ["Profit and loss", ["Month", "Orders", "Booked sales", "Cost of goods", "Expenses", "Net profit", "Cash received", "Outstanding"],
+      lastMonths(12).map(m => [m.label + " " + m.year, m.count, m.bookedSales, m.cogs, m.expenses, m.profit, m.cashReceived, m.outstanding])],
+    ["Bake log", ["Product", "Batches", "Date", "Ingredients deducted", "Notes"],
+      db.bakes.map(b => [productName(b.productId), num(b.qty) || 1, b.date,
+        (b.deductions || []).map(x => {
+          const i = byId(db.ingredients, x.ingredientId);
+          return (i ? i.name : "removed ingredient") + " " + num(x.qty) + (i ? " " + i.unit : "");
+        }).join("; "), b.notes || ""])],
     ["Waste", ["Item", "Qty", "Reason", "Cost", "Date"],
       db.waste.map(w => [w.item, w.qty || "", w.reason || "", num(w.cost), w.date])],
     ["Tasks", ["Task", "Due", "Done"], db.tasks.map(t => [t.text, t.due || "", t.done ? "Yes" : "No"])],
@@ -1787,26 +2027,40 @@ const ACTIONS = {
     const total = f.total !== "" ? num(f.total) : (p ? costing(p).price * qty : 0);
     commit(() => db.orders.push({
       id: uid(), customerId: f.customerId, productId: f.productId, qty,
-      date: f.date || todayISO(), status: "enquiry", total: +total.toFixed(2), deposit: 0,
+      date: f.date || todayISO(), status: "enquiry", total: round2(total),
+      depositRequired: 0, payments: [], costSnapshot: null,
       notes: "", createdAt: todayISO()
     }), "Enquiry added.");
     clearForm(el);
   },
   openOrder: d => openOrderModal(d.id),
   saveOrder(d, el) {
-    const f = readForm(el);
-    commit(() => {
-      const o = byId(db.orders, d.id);
-      if (!o) return;
-      Object.assign(o, {
-        customerId: f.customerId, productId: f.productId,
-        qty: Math.max(1, parseInt(f.qty, 10) || 1), date: f.date,
-        total: num(f.total), deposit: clamp(num(f.deposit), 0, num(f.total)),
-        status: f.status, notes: f.notes || ""
-      });
-      if (o.status === "paid") o.deposit = o.total;
-    }, "Order updated.");
+    if (!applyOrderForm(d.id, readForm(el), "Order updated.")) return;
     closeModal();
+  },
+  /** Records cash typed into the dialog, keeping any other edits. */
+  addPayment(d, el) {
+    const f = readForm(el);
+    const amount = round2(f.payAmount);
+    if (!(amount > 0)) return toast("Enter an amount to record.");
+    applyOrderForm(d.id, f, null, o => addPayment(o, amount, f.payDate || todayISO(), ""));
+    openOrderModal(d.id);
+    toast("Payment of " + money(amount) + " recorded.");
+  },
+  payDeposit(d, el) {
+    const f = readForm(el);
+    applyOrderForm(d.id, f, null, o => addPayment(o, depositDue(o), todayISO(), "Deposit"));
+    openOrderModal(d.id);
+    toast("Deposit recorded.");
+  },
+  deletePayment(d, el) {
+    const f = readForm(el);
+    applyOrderForm(d.id, f, null, o => {
+      o.payments = paymentsOf(o).filter(pay => pay.id !== d.pay);
+      if (o.status === "paid" && !isFullyPaid(o)) o.status = "booked";
+    });
+    openOrderModal(d.id);
+    toast("Payment removed.");
   },
   advance(d) {
     commit(() => {
@@ -1817,11 +2071,22 @@ const ACTIONS = {
     });
   },
   setStatus(d) { commit(() => { const o = byId(db.orders, d.id); if (o) setStatus(o, d.value); }); },
-  markPaid(d) { commit(() => { const o = byId(db.orders, d.id); if (o) setStatus(o, "paid"); }, "Marked as paid."); closeModal(); },
+  markPaid(d, el) {
+    const inDialog = !!(el && el.closest("[data-form='editOrder']"));
+    if (inDialog) {
+      applyOrderForm(d.id, readForm(el), null, o => addPayment(o, balanceOf(o), todayISO(), "Balance"));
+      openOrderModal(d.id);
+      return toast("Balance recorded.");
+    }
+    commit(() => { const o = byId(db.orders, d.id); if (o) setStatus(o, "paid"); }, "Balance recorded — order paid.");
+  },
   deleteOrder(d) {
     const o = byId(db.orders, d.id);
     if (!o) return;
-    confirmDo("Delete order?", customerName(o.customerId) + " — " + productName(o.productId) + ". This cannot be undone.",
+    const got = receivedOf(o);
+    confirmDo("Delete order?", customerName(o.customerId) + " — " + productName(o.productId) +
+      (got > 0 ? ". This also deletes " + money(got) + " of recorded payments, which will drop out of your cash received and profit figures." : ".") +
+      " This cannot be undone.",
       "Delete order", () => commit(() => removeById(db.orders, d.id), "Order deleted."));
   },
   filterOrders(d) { ui.filter = d.value; render(); },
@@ -1836,35 +2101,44 @@ const ACTIONS = {
   addCustomer(d, el) {
     const f = readForm(el);
     if (!f.name || !f.name.trim()) return toast("A name is needed.");
-    commit(() => db.customers.push({ id: uid(), name: f.name.trim(), email: f.email || "", phone: f.phone || "", notes: "" }), "Customer added.");
+    if (sameName(db.customers, f.name)) return toast("You already have a customer called " + f.name.trim() + ".");
+    commit(() => db.customers.push({ id: uid(), name: f.name.trim(), email: f.email || "", phone: f.phone || "", notes: "", archived: false }), "Customer added.");
     clearForm(el);
   },
   toggleCustomer(d) { ui.openCustomer = ui.openCustomer === d.id ? null : d.id; render(); },
   editCustomer: d => openCustomerModal(d.id),
   saveCustomer(d, el) {
     const f = readForm(el);
+    if (f.name && sameName(db.customers, f.name, d.id)) return toast("Another customer already has that name.");
     commit(() => { const c = customerById(d.id); if (c) Object.assign(c, { name: f.name || c.name, email: f.email, phone: f.phone, notes: f.notes }); }, "Customer saved.");
     closeModal();
   },
+  /** A customer attached to orders is archived, so the sales they account
+      for stay in the books. Only a customer with no history is deleted. */
   deleteCustomer(d) {
     const c = customerById(d.id);
+    if (!c) return;
     const n = db.orders.filter(o => o.customerId === d.id).length;
-    confirmDo("Delete customer?", c.name + (n ? " and their " + n + " order" + (n === 1 ? "" : "s") : "") + ". This cannot be undone.",
-      "Delete", () => commit(() => {
-        db.orders = db.orders.filter(o => o.customerId !== d.id);
-        removeById(db.customers, d.id);
-      }, "Customer deleted."));
+    if (!n) {
+      return confirmDo("Delete customer?", c.name + " has no orders.", "Delete",
+        () => commit(() => removeById(db.customers, d.id), "Customer deleted."));
+    }
+    confirmDo("Archive " + c.name + "?", "They have " + n + " order" + (n === 1 ? "" : "s") +
+      " in your records, so deleting them would change your sales history. Archiving hides them from new orders and keeps the history intact.",
+      "Archive customer", () => commit(() => { c.archived = true; }, "Customer archived."));
   },
+  restoreCustomer(d) { commit(() => { const c = customerById(d.id); if (c) c.archived = false; }, "Customer restored."); },
 
   /* ---- products ---- */
   addProduct(d, el) {
     const f = readForm(el);
     if (!f.name || !f.name.trim()) return toast("Give the product a name.");
+    if (sameName(db.products, f.name)) return toast("You already have a product called " + f.name.trim() + ".");
     commit(() => db.products.push({
       id: uid(), name: f.name.trim(), category: f.category || "",
       ingCost: num(f.ingCost), labour: num(f.labour), overhead: num(f.overhead),
       margin: clamp(num(f.margin) || num(db.settings.defaultMargin), 0, 95),
-      allergens: f.allergens || []
+      allergens: f.allergens || [], recipe: [], archived: false
     }), "Product added.");
     clearForm(el);
   },
@@ -1885,6 +2159,7 @@ const ACTIONS = {
   },
   saveProduct(d, el) {
     const f = readForm(el);
+    if (f.name && sameName(db.products, f.name, d.id)) return toast("Another product already has that name.");
     const recipe = readRecipe(el);
     commit(() => {
       const p = productById(d.id);
@@ -1897,16 +2172,29 @@ const ACTIONS = {
     }, "Product saved.");
     closeModal();
   },
+  /** A product that has been sold is archived, so past orders keep their
+      name, recipe and committed cost. */
   deleteProduct(d) {
     const p = productById(d.id);
-    confirmDo("Delete product?", p.name + ". Existing orders keep their prices but lose the product link.",
-      "Delete", () => commit(() => removeById(db.products, d.id), "Product deleted."));
+    if (!p) return;
+    const n = db.orders.filter(o => o.productId === d.id).length;
+    const bakes = db.bakes.filter(b => b.productId === d.id).length;
+    if (!n && !bakes) {
+      return confirmDo("Delete product?", p.name + " has never been ordered or baked.", "Delete",
+        () => commit(() => removeById(db.products, d.id), "Product deleted."));
+    }
+    confirmDo("Archive " + p.name + "?", "It appears on " + n + " order" + (n === 1 ? "" : "s") +
+      (bakes ? " and " + bakes + " bake" + (bakes === 1 ? "" : "s") : "") +
+      ". Archiving hides it from new orders and keeps that history readable.",
+      "Archive product", () => commit(() => { p.archived = true; }, "Product archived."));
   },
+  restoreProduct(d) { commit(() => { const p = productById(d.id); if (p) p.archived = false; }, "Product restored."); },
 
   /* ---- inventory ---- */
   addIngredient(d, el) {
     const f = readForm(el);
     if (!f.name || !f.name.trim()) return toast("Name the ingredient.");
+    if (sameName(db.ingredients, f.name)) return toast("You already track an ingredient called " + f.name.trim() + ".");
     commit(() => db.ingredients.push({
       id: uid(), name: f.name.trim(), unit: f.unit || "kg", stock: num(f.stock),
       reorder: num(f.reorder), cost: num(f.cost), expiry: f.expiry || ""
@@ -1921,13 +2209,41 @@ const ACTIONS = {
       i.stock = Math.max(0, +(num(i.stock) + num(d.by) * step).toFixed(2));
     });
   },
-  deleteIngredient(d) { commit(() => removeById(db.ingredients, d.id), "Ingredient removed."); },
+  deleteIngredient(d) {
+    const i = byId(db.ingredients, d.id);
+    if (!i) return;
+    const users = db.products.filter(p => (p.recipe || []).some(l => l.ingredientId === d.id));
+    if (!users.length) {
+      return confirmDo("Delete ingredient?", i.name + " is not used in any recipe.", "Delete",
+        () => commit(() => removeById(db.ingredients, d.id), "Ingredient removed."));
+    }
+    // Removing it would silently change what those products cost, so say so
+    // and make the consequence the explicit choice.
+    pendingConfirm = () => commit(() => {
+      for (const p of users) {
+        p.recipe = (p.recipe || []).filter(l => l.ingredientId !== d.id);
+        if (!p.recipe.length) p.ingCost = round2(p.ingCost);
+      }
+      removeById(db.ingredients, d.id);
+    }, "Removed from " + users.length + " recipe" + (users.length === 1 ? "" : "s") + " and deleted.");
+    modal("Ingredient is in use", i.name + " is used by " + users.length + " recipe" + (users.length === 1 ? "" : "s") + ".",
+      '<div class="stack" style="gap:8px">' +
+        users.map(p => '<div class="row between" style="padding:6px 0;border-bottom:1px solid var(--line)">' +
+          '<span>' + esc(p.name) + '</span><span class="hint">' + money(costing(p).cost) + ' per unit today</span></div>').join("") +
+        '<p class="hint" style="margin:10px 0 0">Deleting it removes the ingredient from those recipes, which changes what they cost from now on. ' +
+        'Orders already booked or paid keep the cost they were committed at.</p>' +
+      '</div>',
+      [{ label: "Cancel", act: "closeModal" },
+       { label: "Remove from recipes and delete", act: "confirmYes", cls: "danger" }]);
+  },
 
   /* ---- expenses ---- */
   addExpense(d, el) {
     const f = readForm(el);
     if (!f.category || !f.category.trim()) return toast("Give the expense a category.");
-    commit(() => db.expenses.push({ id: uid(), category: f.category.trim(), amount: num(f.amount), date: f.date || todayISO(), notes: "" }), "Expense logged.");
+    const amount = round2(Math.max(0, num(f.amount)));
+    if (!(amount > 0)) return toast("Enter an amount for the expense.");
+    commit(() => db.expenses.push({ id: uid(), category: f.category.trim(), amount, date: f.date || todayISO(), notes: "" }), "Expense logged.");
     clearForm(el);
   },
   deleteExpense(d) { commit(() => removeById(db.expenses, d.id), "Expense deleted."); },
@@ -1950,10 +2266,15 @@ const ACTIONS = {
     const short = lines.filter(r => num(r.ingredient.stock) < r.qty * batches);
     const doLog = () => {
       commit(() => {
-        for (const r of lines) {
-          r.ingredient.stock = Math.max(0, +(num(r.ingredient.stock) - r.qty * batches).toFixed(2));
-        }
-        db.bakes.push({ id: uid(), productId: f.productId, qty: batches, date: todayISO(), notes: "" });
+        // Record what was actually taken, not what the recipe asked for, so
+        // deleting the bake can put back exactly that and nothing else.
+        const deductions = lines.map(r => {
+          const want = round2(r.qty * batches);
+          const took = round2(Math.min(want, Math.max(0, num(r.ingredient.stock))));
+          r.ingredient.stock = round2(num(r.ingredient.stock) - took);
+          return { ingredientId: r.ingredient.id, qty: took };
+        }).filter(x => x.qty > 0);
+        db.bakes.push({ id: uid(), productId: f.productId, qty: batches, date: todayISO(), notes: "", deductions });
       }, lines.length ? "Bake logged — " + lines.length + " ingredients deducted." : "Bake logged.");
       clearForm(el);
     };
@@ -1965,11 +2286,27 @@ const ACTIONS = {
     }
     doLog();
   },
-  deleteBake(d) { commit(() => removeById(db.bakes, d.id)); },
+  deleteBake(d) {
+    const b = byId(db.bakes, d.id);
+    if (!b) return;
+    const back = (b.deductions || []).filter(x => byId(db.ingredients, x.ingredientId));
+    const restore = () => commit(() => {
+      for (const x of back) {
+        const i = byId(db.ingredients, x.ingredientId);
+        if (i) i.stock = round2(num(i.stock) + num(x.qty));
+      }
+      removeById(db.bakes, d.id);
+    }, back.length ? "Bake removed — stock put back." : "Bake removed.");
+    if (!back.length) return restore();
+    confirmDo("Remove this bake?", "Deleting it returns " + back.map(x =>
+      num(x.qty) + " " + byId(db.ingredients, x.ingredientId).unit + " of " +
+      byId(db.ingredients, x.ingredientId).name).join(", ") + " to inventory.", "Remove and restore stock", restore);
+  },
   addWaste(d, el) {
     const f = readForm(el);
     if (!f.item || !f.item.trim()) return toast("What was wasted?");
-    commit(() => db.waste.push({ id: uid(), item: f.item.trim(), qty: f.qty || "", reason: f.reason || "", cost: num(f.cost), date: todayISO() }), "Waste logged.");
+    commit(() => db.waste.push({ id: uid(), item: f.item.trim(), qty: f.qty || "", reason: f.reason || "",
+      cost: round2(Math.max(0, num(f.cost))), date: todayISO() }), "Waste logged.");
     clearForm(el);
   },
   deleteWaste(d) { commit(() => removeById(db.waste, d.id)); },
@@ -2019,19 +2356,49 @@ const ACTIONS = {
   },
   importBackup(d, el) {
     const file = el.files && el.files[0];
+    el.value = "";
     if (!file) return;
+    if (file.size > 40 * 1024 * 1024) return toast("That file is too large to be a backup.");
     const reader = new FileReader();
+    reader.onerror = () => toast("That file could not be read.");
     reader.onload = () => {
       let parsed;
       try { parsed = JSON.parse(reader.result); }
-      catch (err) { return toast("That file isn't a valid backup."); }
-      if (!parsed || !parsed.schema || !Array.isArray(parsed.orders)) return toast("That file isn't a Bakery Business OS backup.");
-      confirmDo("Restore this backup?", "It replaces everything currently on this device — " +
-        parsed.orders.length + " orders, " + (parsed.customers || []).length + " customers.",
-        "Restore", () => { db = migrate(parsed); save(); go("dashboard"); toast("Backup restored."); });
+      catch (err) { return toast("That file isn't valid JSON — it may be damaged."); }
+      const problems = backupProblems(parsed);
+      if (problems.length) {
+        return modal("This backup can't be restored", problems[0],
+          problems.length > 1 ? '<ul class="muted" style="margin:0;padding-left:18px">' +
+            problems.slice(1).map(x => '<li>' + esc(x) + '</li>').join("") + '</ul>' : "",
+          [{ label: "Close", act: "closeModal" }]);
+      }
+      // Snapshot what is here now, so a restore can be undone if it was a mistake.
+      const before = JSON.stringify(db);
+      const counts = LISTS.map(k => (parsed[k] || []).length);
+      confirmDo("Restore this backup?", "It replaces everything on this device with " +
+        (parsed.orders || []).length + " orders, " + (parsed.customers || []).length + " customers, " +
+        (parsed.products || []).length + " products and " + (parsed.ingredients || []).length + " ingredients" +
+        (num(parsed.schema) < SCHEMA ? ", upgrading it from an earlier version of the app." : "."),
+        "Restore", () => {
+          undoSnapshot = before;
+          db = migrate(parsed);
+          writeNow();
+          go("dashboard");
+          toast("Backup restored — " + sum(counts) + " records.");
+        });
     };
     reader.readAsText(file);
-    el.value = "";
+  },
+  undoRestore() {
+    if (!undoSnapshot) return;
+    confirmDo("Undo?", "This puts back the data that was on this device before the last restore or reset.",
+      "Undo restore", () => {
+        db = migrate(JSON.parse(undoSnapshot));
+        undoSnapshot = null;
+        writeNow();
+        go("dashboard");
+        toast("Previous data put back.");
+      });
   },
   exportWorkbook() {
     download(slug(db.settings.bakeryName) + "-workbook-" + stamp() + ".xls", toWorkbook(), "application/vnd.ms-excel");
@@ -2045,6 +2412,7 @@ const ACTIONS = {
   resetEmpty() {
     confirmDo("Clear all data?", "Every order, customer, product and record on this device will be deleted. Export a backup first if you want to keep it.",
       "Delete everything", () => {
+        undoSnapshot = JSON.stringify(db);
         const fresh = seed();
         db = Object.assign(fresh, {
           customers: [], products: [], ingredients: [], orders: [], expenses: [],
@@ -2052,21 +2420,60 @@ const ACTIONS = {
           settings: Object.assign(fresh.settings, { bakeryName: db.settings.bakeryName, currency: db.settings.currency }),
           meta: { lastBackup: null, createdAt: todayISO(), sample: false }
         });
-        save(); go("dashboard"); toast("Cleared. This is your bakery now.");
+        writeNow(); go("dashboard"); toast("Cleared — use Undo in Backup & restore if that was a mistake.");
       });
   },
   resetSample() {
     confirmDo("Reload sample data?", "This replaces what's on the device with the demo bakery.",
-      "Reload sample", () => { db = seed(); save(); go("dashboard"); toast("Sample data loaded."); });
+      "Reload sample", () => { undoSnapshot = JSON.stringify(db); db = seed(); writeNow(); go("dashboard"); toast("Sample data loaded."); });
   }
 };
 
-/** Status changes also settle the money, so payment figures stay honest. */
+/** Writes the order dialog's fields back, then runs an optional extra
+    change (recording a payment, say) inside the same commit — so a side
+    action can never discard what the user had already typed. */
+function applyOrderForm(id, f, message, extra) {
+  const o = byId(db.orders, id);
+  if (!o) return false;
+  const total = Math.max(0, num(f.total));
+  commit(() => {
+    if (f.customerId) o.customerId = f.customerId;
+    if (f.productId && f.productId !== o.productId) {
+      o.productId = f.productId;
+      o.costSnapshot = null;            // the old freeze belongs to another product
+    }
+    o.qty = Math.max(1, parseInt(f.qty, 10) || 1);
+    o.date = f.date || o.date;
+    o.total = total;
+    o.depositRequired = clamp(num(f.depositRequired), 0, total);
+    o.notes = f.notes || "";
+    if (f.status && f.status !== o.status) setStatus(o, f.status);
+    if (isCommitted(o) && !o.costSnapshot) {
+      const prod = productById(o.productId);
+      if (prod) o.costSnapshot = snapshotCost(prod);
+    }
+    if (extra) extra(o);
+    // A status can be typed in that the payments contradict; trust the cash.
+    if (o.status === "paid" && !isFullyPaid(o)) o.status = "booked";
+    if (o.status === "booked" && isFullyPaid(o) && num(o.total) > 0) o.status = "paid";
+  }, message);
+  return true;
+}
+
+/** Moves an order between stages. Stages never invent or destroy cash:
+    committing an order freezes its cost and asks for a deposit, and moving
+    backwards leaves every recorded payment exactly where it was. */
 function setStatus(o, status) {
   o.status = status;
-  if (status === "paid") o.deposit = num(o.total);
-  else if (status === "booked" && num(o.deposit) === 0) o.deposit = +(num(o.total) * num(db.settings.depositPct) / 100).toFixed(2);
-  else if (status === "enquiry" || status === "quoted") o.deposit = 0;
+  if (isCommitted(o) && !o.costSnapshot) {
+    const p = productById(o.productId);
+    if (p) o.costSnapshot = snapshotCost(p);
+  }
+  if ((status === "quoted" || status === "booked") && !num(o.depositRequired)) {
+    o.depositRequired = round2(num(o.total) * num(db.settings.depositPct) / 100);
+  }
+  // "Paid" is a statement that the money arrived, so record the balance.
+  if (status === "paid" && !isFullyPaid(o)) addPayment(o, balanceOf(o), todayISO(), "Balance");
 }
 
 /* ---------- kanban drag & drop ---------- */
