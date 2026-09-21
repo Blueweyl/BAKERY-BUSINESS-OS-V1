@@ -15,7 +15,7 @@ Nine modules, all sharing one set of records:
 | **Customers** | Contact details, notes, order history and lifetime spend, calculated automatically |
 | **Products & costing** | A recipe editor priced from live inventory, the pricing formula, profit per unit and the allergen matrix |
 | **Inventory** | Stock levels, reorder points, expiry warnings, stock value and a shopping list |
-| **Payments & performance** | Booked sales, cash received, outstanding and expenses, with 12 months of profit |
+| **Money & Performance** | Booked sales, cash received, outstanding and expenses, with 12 months of profit |
 | **Tasks & bake log** | To-dos, what came out of the oven, waste tracking and a social planner |
 | **Settings & backup** | Bakery details for documents, exports, and backup / restore |
 
@@ -54,11 +54,11 @@ questions:
 | **Booked sales** | Orders the customer has agreed to — booked or paid. Dated by when the order is wanted. |
 | **Cash received** | Money actually taken, recorded payment by payment and dated by when it arrived. |
 | **Outstanding** | Booked sales not yet paid for. An enquiry or an open quote is never a debt. |
-| **Net profit** | Booked sales − cost of goods − expenses. |
+| **Estimated net profit** | Booked sales − cost of goods − expenses. Called *estimated* because it is built from fulfilment-dated sales and your recorded costs. |
 
-Sales, cost of goods and profit count in the month the order is **wanted** —
-its fulfilment date. Cash received counts in the month the payment was
-**taken**. That is why the two can differ, and it is deliberate: it tells you
+Booked sales and cost of goods count in the month of the order's **fulfilment
+date** — the day the cake is wanted. Cash received counts in the month of the
+**actual payment date**. That is why the two can differ, and it is deliberate: it tells you
 what the bakery earned in a month separately from what landed in the till.
 It is a business performance view to run the bakery by, not a formal set of
 accounts; a bookkeeper or tax return may count the same money on different

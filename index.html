@@ -797,7 +797,7 @@ const NAV = [
   { id: "customers",  label: "Customers",           short: "People" },
   { id: "products",   label: "Products & costing",  short: "Products" },
   { id: "inventory",  label: "Inventory",           short: "Stock" },
-  { id: "payments",   label: "Payments & performance", short: "Money" },
+  { id: "payments",   label: "Money & Performance",  short: "Money" },
   { id: "kitchen",    label: "Tasks & bake log",    short: "Kitchen" },
   { id: "settings",   label: "Settings & backup",   short: "Setup" }
 ];
@@ -1054,7 +1054,7 @@ VIEWS.dashboard = function () {
     '<div class="grid kpis mb">' +
       kpi("Booked sales this month", money0(cur_.bookedSales), dRev) +
       kpi("Cash received this month", money0(cur_.cashReceived), dCash) +
-      kpi("Net profit this month", money0(cur_.profit), dProfit) +
+      kpi("Estimated net profit this month", money0(cur_.profit), dProfit) +
       '<div class="card"><div class="kpi-label">Outstanding</div>' +
         '<div class="kpi-value num" style="color:var(--amber)">' + money0(owed) + '</div>' +
         '<div class="kpi-sub flat">Owed on booked orders</div></div>' +
@@ -1639,13 +1639,13 @@ VIEWS.payments = function () {
     '<div class="card"><div class="kpi-label">' + esc(label) + '</div>' +
     '<div class="num" style="font-size:26px;font-weight:700;margin-top:6px' + (color ? ";color:" + color : "") + '">' + esc(value) + '</div></div>';
 
-  return header("Payments, expenses & business performance", "Know exactly how the business is doing.") +
+  return header("Money & Business Performance", "Know exactly how the business is doing.") +
     '<div class="grid kpis mb">' +
       stat("Booked sales", money0(bookedSales)) +
       stat("Cash received", money0(totalReceived), "var(--green)") +
       stat("Outstanding", money0(totalOutstanding), "var(--amber)") +
       stat("Expenses + cost of goods", money0(totalExpenses + totalCogs), "var(--red)") +
-      '<div class="card dark"><div style="opacity:.6;font-size:14px">Net profit</div>' +
+      '<div class="card dark"><div style="opacity:.6;font-size:14px">Estimated net profit</div>' +
         '<div class="num" style="color:var(--accent);font-size:26px;font-weight:800;margin-top:6px">' + money0(net) + '</div></div>' +
     '</div>' +
     (() => { const over = round2(sum(db.orders, overpaidBy));
@@ -1654,25 +1654,26 @@ VIEWS.payments = function () {
     '<p class="hint" style="margin:-8px 0 20px">Booked sales are orders the customer has agreed to. Cash received is money actually ' +
       'in your hands. Profit is booked sales less cost of goods (' + money0(totalCogs) + ') and expenses (' + money0(totalExpenses) + ')' +
       (expected > 0 ? ' — a further ' + money0(expected) + ' sits in open enquiries and quotes.' : '.') + '<br>' +
-      '<strong>Which month a figure lands in:</strong> sales, cost of goods and profit count in the month the order is ' +
-      'wanted (its fulfilment date); cash received counts in the month the payment was actually taken. That is why the two ' +
-      'can differ. This is a business performance view to run the bakery by, not a formal set of accounts — your accountant ' +
-      'or tax return may count the same money on different dates.</p>' +
+      '<strong>Which month a figure lands in:</strong> booked sales and cost of goods count in the month of the order&rsquo;s ' +
+      '<strong>fulfilment date</strong> — the day the cake is wanted. Cash received counts in the month of the ' +
+      '<strong>actual payment date</strong>. That is why the two can differ. Profit is called <em>estimated</em> because it ' +
+      'is built from those fulfilment-dated sales and your recorded costs: it is a business performance view to run the ' +
+      'bakery by, not a formal set of accounts, and a bookkeeper or tax return may count the same money on different dates.</p>' +
 
     '<section class="card mb">' +
       '<div class="row between" style="margin-bottom:16px">' +
-        '<div class="card-title" style="margin:0">Business performance by month</div>' +
+        '<div class="card-title" style="margin:0">Money &amp; performance by month</div>' +
         '<div class="legend"><span><i class="swatch"></i>Booked sales</span>' +
-          '<span><i class="swatch green"></i>Cash received</span><span><i class="swatch ink"></i>Net profit</span></div>' +
+          '<span><i class="swatch green"></i>Cash received</span><span><i class="swatch ink"></i>Estimated net profit</span></div>' +
       '</div>' +
       barChart(months.map(m => ({ label: m.label, values: [
         { v: Math.max(0, m.bookedSales), title: "Booked sales " + money(m.bookedSales) },
         { v: Math.max(0, m.cashReceived), cls: "green", title: "Cash received " + money(m.cashReceived) },
-        { v: Math.max(0, m.profit), cls: "ink", title: "Net profit " + money(m.profit) }
+        { v: Math.max(0, m.profit), cls: "ink", title: "Estimated net profit " + money(m.profit) }
       ] })), 200) +
       '<div class="row between" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">' +
-        '<span class="hint">Net profit = booked sales &minus; cost of goods &minus; expenses, by fulfilment date</span>' +
-        '<button class="btn ghost sm" data-act="printPL">Print business performance</button>' +
+        '<span class="hint">Estimated net profit = booked sales &minus; cost of goods &minus; expenses, by fulfilment date</span>' +
+        '<button class="btn ghost sm" data-act="printPL">Print money &amp; performance</button>' +
       '</div>' +
     '</section>' +
 
@@ -1717,7 +1718,7 @@ VIEWS.payments = function () {
             '<div class="row between" style="padding:6px 0"><span class="muted">Cost of goods</span><span class="num">' + money(m.cogs) + '</span></div>' +
             '<div class="row between" style="padding:6px 0"><span class="muted">Expenses</span><span class="num">' + money(m.expenses) + '</span></div>' +
             '<div class="row between" style="padding:10px 0;border-top:1px solid var(--line);margin-top:6px">' +
-              '<span class="strong">Net profit</span><span class="strong num" style="color:var(--accent)">' + money(m.profit) + '</span></div>' +
+              '<span class="strong">Estimated net profit</span><span class="strong num" style="color:var(--accent)">' + money(m.profit) + '</span></div>' +
             '<div class="row between" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">Cash received</span>' +
               '<span class="num" style="color:var(--green)">' + money(m.cashReceived) + '</span></div>' +
             '<div class="row between" style="padding:6px 0"><span class="muted">Still outstanding</span>' +
@@ -2019,21 +2020,22 @@ function plDoc() {
   });
   const tot = months.reduce(add, { bookedSales: 0, expenses: 0, cogs: 0, profit: 0, cashReceived: 0 });
   const owed = round2(sum(db.orders, outstandingOf));
-  return '<div class="doc">' + docHead("Business performance", "Last 12 months, by fulfilment date", ["Printed " + fmtLongDate(todayISO())]) +
+  return '<div class="doc">' + docHead("Money & Business Performance", "Last 12 months", ["Sales and cost of goods by order fulfilment date", "Cash received by actual payment date", "Printed " + fmtLongDate(todayISO())]) +
     '<table style="font-size:13px"><thead><tr><th>Month</th><th class="r">Orders</th><th class="r">Booked sales</th>' +
-      '<th class="r">Cost of goods</th><th class="r">Expenses</th><th class="r">Net profit</th><th class="r">Cash received</th></tr></thead><tbody>' +
+      '<th class="r">Cost of goods</th><th class="r">Expenses</th><th class="r">Est. net profit</th><th class="r">Cash received</th></tr></thead><tbody>' +
     months.map(m => '<tr><td>' + m.label + " " + m.year + '</td><td class="r">' + m.count + '</td><td class="r">' + money(m.bookedSales) +
       '</td><td class="r">' + money(m.cogs) + '</td><td class="r">' + money(m.expenses) +
       '</td><td class="r"><strong>' + money(m.profit) + '</strong></td><td class="r">' + money(m.cashReceived) + '</td></tr>').join("") +
     '</tbody></table>' +
-    '<div class="doc-total"><span>Net profit, 12 months</span><span>' + money(tot.profit) + '</span></div>' +
+    '<div class="doc-total"><span>Estimated net profit, 12 months</span><span>' + money(tot.profit) + '</span></div>' +
     '<div class="doc-note"><strong>How these are counted.</strong> Booked sales are orders the customer has agreed to ' +
       '(booked or paid), dated by when the order is wanted — its fulfilment date. Cost of goods is each order&rsquo;s recipe cost, locked at the ' +
-      'moment it was committed, so past months do not move when ingredient prices change. Net profit = booked sales ' +
+      'moment it was committed, so past months do not move when ingredient prices change. Estimated net profit = booked sales ' +
       '&minus; cost of goods &minus; expenses. Cash received is money actually taken in the month, which may fall in a ' +
       'different month from the sale.<br>' +
-      '<strong>This is a business performance summary, not a formal set of accounts.</strong> It is dated by fulfilment, ' +
-      'so a bookkeeper or tax return may count the same money in different months. Use it to run the bakery, not to file with.<br>' +
+      '<strong>This is a business performance summary, not a formal set of accounts.</strong> Booked sales and cost of goods ' +
+      'are dated by order fulfilment; cash received is dated by the actual payment. Profit is therefore an estimate, and a ' +
+      'bookkeeper or tax return may count the same money in different months. Use it to run the bakery, not to file with.<br>' +
       '12-month totals — booked sales ' + money(tot.bookedSales) + ' · cost of goods ' + money(tot.cogs) +
       ' · expenses ' + money(tot.expenses) + ' · cash received ' + money(tot.cashReceived) +
       '. Still outstanding across all booked orders: ' + money(owed) + '.</div></div>';
@@ -2090,7 +2092,7 @@ function sheets() {
       db.orders.flatMap(o => paymentsOf(o).map(pay =>
         [customerName(o.customerId), o.date, pay.date, num(pay.amount), pay.note || "",
           num(o.total), receivedOf(o), outstandingOf(o)]))],
-    ["Business performance", ["Month", "Orders", "Booked sales", "Cost of goods", "Expenses", "Net profit", "Cash received", "Outstanding"],
+    ["Money and performance", ["Month", "Orders", "Booked sales (fulfilment date)", "Cost of goods", "Expenses", "Estimated net profit", "Cash received (payment date)", "Outstanding"],
       lastMonths(12).map(m => [m.label + " " + m.year, m.count, m.bookedSales, m.cogs, m.expenses, m.profit, m.cashReceived, m.outstanding])],
     ["Bake log", ["Product", "Batches", "Date", "Ingredients deducted", "Notes"],
       db.bakes.map(b => [productName(b.productId), num(b.qty) || 1, b.date,
@@ -2166,7 +2168,7 @@ const ACTIONS = {
     // Choosing Paid from the status list would record the balance as cash, so
     // it asks first. Cancelling keeps every other edit and leaves the status.
     if (f.status === "paid" && o.status !== "paid" && balanceOf(o) > 0.005) {
-      pendingConfirm = () => { applyOrderForm(d.id, f, "Order updated."); closeModal(); };
+      pendingConfirm = () => { applyOrderForm(d.id, f, "Order updated.", null, true); closeModal(); };
       pendingCancel = () => {
         applyOrderForm(d.id, Object.assign({}, f, { status: o.status }), "Order updated — status left unchanged.");
         closeModal();
@@ -2217,7 +2219,7 @@ const ACTIONS = {
     const o = byId(db.orders, d.id);
     if (!o) return;
     const next = STATUSES[Math.min(STATUSES.length - 1, STATUSES.indexOf(o.status) + 1)];
-    const step = () => commit(() => setStatus(o, next));
+    const step = () => commit(() => setStatus(o, next, true));
     if (next === "paid") return confirmPaid(o, step);
     step();
   },
@@ -2233,7 +2235,7 @@ const ACTIONS = {
         toast("Balance recorded.");
       });
     }
-    confirmPaid(o, () => commit(() => setStatus(o, "paid"), "Balance recorded — order paid."));
+    confirmPaid(o, () => commit(() => setStatus(o, "paid", true), "Balance recorded — order paid."));
   },
   deleteOrder(d) {
     const o = byId(db.orders, d.id);
@@ -2592,7 +2594,7 @@ const ACTIONS = {
 /** Writes the order dialog's fields back, then runs an optional extra
     change (recording a payment, say) inside the same commit — so a side
     action can never discard what the user had already typed. */
-function applyOrderForm(id, f, message, extra) {
+function applyOrderForm(id, f, message, extra, mayRecordBalance) {
   const o = byId(db.orders, id);
   if (!o) return false;
   const total = Math.max(0, num(f.total));
@@ -2607,7 +2609,7 @@ function applyOrderForm(id, f, message, extra) {
     o.total = total;
     o.depositRequired = clamp(num(f.depositRequired), 0, total);
     o.notes = f.notes || "";
-    if (f.status && f.status !== o.status) setStatus(o, f.status);
+    if (f.status && f.status !== o.status) setStatus(o, f.status, !!mayRecordBalance);
     if (isCommitted(o) && !o.costSnapshot) {
       const prod = productById(o.productId);
       if (prod) o.costSnapshot = snapshotCost(prod);
@@ -2623,7 +2625,7 @@ function applyOrderForm(id, f, message, extra) {
 /** Moves an order between stages. Stages never invent or destroy cash:
     committing an order freezes its cost and asks for a deposit, and moving
     backwards leaves every recorded payment exactly where it was. */
-function setStatus(o, status) {
+function setStatus(o, status, recordBalance) {
   o.status = status;
   if (isCommitted(o) && !o.costSnapshot) {
     const p = productById(o.productId);
@@ -2632,8 +2634,11 @@ function setStatus(o, status) {
   if ((status === "quoted" || status === "booked") && !num(o.depositRequired)) {
     o.depositRequired = round2(num(o.total) * num(db.settings.depositPct) / 100);
   }
-  // "Paid" is a statement that the money arrived, so record the balance.
-  if (status === "paid" && !isFullyPaid(o)) addPayment(o, balanceOf(o), todayISO(), "Balance");
+  // "Paid" is a statement that the money arrived — but only a route that has
+  // confirmed the amount with the user may record it. Every other way of
+  // landing on "paid" leaves the cash untouched and is reconciled against the
+  // payments instead, so no code path can invent money by accident.
+  if (status === "paid" && recordBalance && !isFullyPaid(o)) addPayment(o, balanceOf(o), todayISO(), "Balance");
 }
 
 /* ---------- kanban drag & drop ---------- */
@@ -2661,7 +2666,7 @@ document.addEventListener("drop", e => {
   if (!o || o.status === to) return;
   // A card dropped on Paid is easy to do by accident, so it asks like any
   // other route to Paid rather than quietly taking the money as received.
-  const move = () => commit(() => setStatus(o, to));
+  const move = () => commit(() => setStatus(o, to, to === "paid"));
   if (to === "paid") return confirmPaid(o, move);
   move();
 });
