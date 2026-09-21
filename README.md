@@ -87,12 +87,17 @@ Ingredient prices are held to four decimals, because an egg or a gram of sugar
 costs a fraction of a cent. Every money total is still rounded to two.
 
 Ingredient costs are edited in Inventory — name, unit, stock, reorder level,
-cost per unit and expiry. Changing the unit of an ingredient a recipe uses asks
-first, naming the quantities that would be reinterpreted — they are not
-converted. Saving a new cost reprices every recipe that uses it
+cost per unit and expiry. Saving a new cost reprices every recipe that uses it
 and every product's suggested price straight away; the dialog lists which
 products move and by how much before you commit. Orders already booked or paid
 keep the cost they were committed at, so past profit never moves.
+
+The unit is **locked** the moment any recipe measures the ingredient in it —
+the dropdown disables itself and says why. Recipe quantities are plain numbers
+in the ingredient's unit, so switching kg to g would leave "0.9" meaning
+0.9 g everywhere it's used, silently changing what every one of those recipes
+costs. Remove it from those recipes first, in Products, then the unit is free
+to change.
 
 Ingredient warnings are tiered so red keeps its meaning: **red** for anything
 already expired, going off within three days, or out of stock; **amber** for a
@@ -109,9 +114,11 @@ Nothing that carries financial history is destroyed silently:
 - A customer or product with orders behind it is **archived**, not deleted —
   hidden from new orders, still readable in the history. Records with no
   history are deleted outright.
-- Deleting an ingredient that a recipe uses is blocked: the app lists the
-  affected products and makes removing it from those recipes the explicit
-  choice.
+- An ingredient used by a recipe or the bake log is **archived**, not
+  deleted — every recipe and past bake keeps resolving it exactly as it does
+  today; it just stops offering itself for new recipes and drops out of stock
+  alerts and the shopping list. Only an ingredient with no history at all is
+  ever deleted outright.
 - Deleting a bake returns exactly the stock it took, from a deduction record
   stored on the bake itself.
 - Deleting an order warns when it would also delete recorded payments.

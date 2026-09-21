@@ -563,6 +563,7 @@ function migrate(data) {
     i.stock = round2(Math.max(0, num(i.stock)));
     i.reorder = round2(Math.max(0, num(i.reorder)));
     i.cost = round4(Math.max(0, num(i.cost)));
+    i.archived = !!i.archived;
   }
   for (const e of data.expenses) e.amount = round2(Math.max(0, num(e.amount)));
   for (const w of data.waste) w.cost = round2(Math.max(0, num(w.cost)));
@@ -728,6 +729,7 @@ function addPayment(o, amount, date, note) {
     out. A fortnight's notice is amber: worth planning around, not an alarm,
     so red keeps its meaning instead of being background noise. */
 function ingredientStatus(i) {
+  if (i.archived) return { key: "archived", label: "Archived", tone: "grey" };
   const days = expiryDays(i);
   if (days !== null && days <= 0) return { key: "expired", label: "Expired", tone: "red" };
   if (days !== null && days <= 3) return { key: "expiring", label: "Expiring", tone: "red" };
@@ -737,7 +739,7 @@ function ingredientStatus(i) {
   return { key: "good", label: "Good", tone: "green" };
 }
 
-const stockValue = () => sum(db.ingredients, i => num(i.stock) * num(i.cost));
+const stockValue = () => sum(db.ingredients.filter(i => !i.archived), i => num(i.stock) * num(i.cost));
 /** Days until an ingredient's use-by, or null if it has no date. */
 const expiryDays = i => (i.expiry ? daysUntil(i.expiry) : null);
 /** Red for expiry runs to three days; the amber band runs to a fortnight. */
@@ -745,8 +747,9 @@ const EXPIRY_CRITICAL = 3, EXPIRY_SOON = 14;
 const expiryIsCritical = i => { const d = expiryDays(i); return d !== null && d <= EXPIRY_CRITICAL; };
 // Both lists ask their own question directly rather than reading the badge,
 // so an ingredient that is out of stock AND near its date appears on both.
-const lowStock = () => db.ingredients.filter(i => num(i.stock) <= num(i.reorder));
-const expiringSoon = () => db.ingredients.filter(i => { const d = expiryDays(i); return d !== null && d <= EXPIRY_SOON; });
+// Archived ingredients are discontinued — not something to reorder or watch the clock on.
+const lowStock = () => db.ingredients.filter(i => !i.archived && num(i.stock) <= num(i.reorder));
+const expiringSoon = () => db.ingredients.filter(i => !i.archived && (() => { const d = expiryDays(i); return d !== null && d <= EXPIRY_SOON; })());
 
 /** Revenue, expenses and profit for a given YYYY-MM. */
 /** One month on two bases, kept deliberately separate:
@@ -833,7 +836,8 @@ function render() {
   // Count ingredients needing attention, not entries across two lists — one
   // that is both out of stock and near its date is still a single ingredient.
   const badges = { orders: alerts().filter(a => a.level === "critical").length,
-    inventory: db.ingredients.filter(i => ingredientStatus(i).key !== "good").length };
+    // Archived ingredients are already dealt with, not something to flag.
+    inventory: db.ingredients.filter(i => !i.archived && ingredientStatus(i).key !== "good").length };
   $("#app").innerHTML =
     '<nav class="sidebar" aria-label="Modules">' +
       '<div class="brand"><div class="brand-mark">B</div><span class="brand-text">Bakery<br>Business OS</span></div>' +
@@ -1533,7 +1537,9 @@ function readRecipeRaw(el) {
 }
 
 function recipeEditor(lines) {
-  const opts = db.ingredients.map(i => ({ value: i.id, label: i.name + " (" + i.unit + ")" }));
+  const used = new Set(lines.map(l => l.ingredientId));
+  const opts = db.ingredients.filter(i => !i.archived || used.has(i.id))
+    .map(i => ({ value: i.id, label: i.name + (i.archived ? " (archived)" : "") + " (" + i.unit + ")" }));
   const cols = "1.5fr .6fr .7fr .7fr 34px";
   const row = (line, idx) => {
     const i = byId(db.ingredients, line.ingredientId);
@@ -1647,13 +1653,20 @@ const UNITS = ["kg", "g", "L", "ml", "units"];
 function openIngredientModal(id) {
   const i = byId(db.ingredients, id);
   if (!i) return;
-  const users = db.products.filter(p => (p.recipe || []).some(l => l.ingredientId === id) && !p.archived);
+  // Unit-locked whenever ANY recipe measures in it, archived products included —
+  // an archived product's recipe would still be silently reinterpreted otherwise.
+  const inAnyRecipe = db.products.filter(p => (p.recipe || []).some(l => l.ingredientId === id));
+  const users = inAnyRecipe.filter(p => !p.archived);
+  const unitLocked = inAnyRecipe.length > 0;
   modal("Edit ingredient", i.name,
     '<div data-form="editIngredient">' +
       '<div class="form-grid" style="grid-template-columns:1.6fr .9fr">' +
         field("Ingredient", '<input data-f="name" value="' + esc(i.name) + '">') +
-        field("Unit", '<select data-f="unit">' + UNITS.map(u =>
-          '<option' + (u === i.unit ? " selected" : "") + '>' + u + '</option>').join("") + '</select>') +
+        field("Unit", '<select data-f="unit"' + (unitLocked ? ' disabled title="Used in a recipe — update the recipe first"' : '') + '>' + UNITS.map(u =>
+          '<option' + (u === i.unit ? " selected" : "") + '>' + u + '</option>').join("") + '</select>' +
+          (unitLocked ? '<p class="hint" style="margin:4px 0 0">Locked — used in ' + inAnyRecipe.length +
+            ' recipe' + (inAnyRecipe.length === 1 ? "" : "s") + '. Remove it from ' +
+            (inAnyRecipe.length === 1 ? "that recipe" : "those recipes") + ' in Products first to change the unit.</p>' : "")) +
       '</div>' +
       '<div class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1.2fr">' +
         field("In stock", '<input type="number" min="0" step="0.01" data-f="stock" value="' + esc(num(i.stock)) + '">') +
@@ -1730,7 +1743,9 @@ function openProductModal(id, draft) {
 VIEWS.inventory = function () {
   const grid = "1.5fr .9fr 1fr 1.3fr 96px";
   const low = lowStock();
-  const rows = db.ingredients.slice().sort((a, b) => {
+  const active = db.ingredients.filter(i => !i.archived);
+  const archived = db.ingredients.filter(i => i.archived);
+  const rows = active.slice().sort((a, b) => {
     const rank = { expired: 0, expiring: 1, out: 2, soon: 3, low: 4, good: 5 };
     return rank[ingredientStatus(a).key] - rank[ingredientStatus(b).key];
   });
@@ -1773,12 +1788,22 @@ VIEWS.inventory = function () {
               delBtn("deleteIngredient", i.id, "Delete ingredient") + '</span>' +
           '</div>';
         }).join("") : emptyRow("No ingredients tracked yet.")) +
+        (archived.length ? archived.map(i =>
+          '<div class="trow" style="grid-template-columns:' + grid + ';opacity:.7">' +
+            '<span><span class="strong">' + esc(i.name) + '</span> ' + pill("Archived", "grey") +
+              '<br><span class="hint">' + unitMoney(num(i.cost)) + ' / ' + esc(i.unit) + '</span></span>' +
+            '<span class="muted num">' + esc(num(i.stock)) + ' ' + esc(i.unit) + '</span>' +
+            '<span class="muted" style="font-size:12.5px">—</span>' +
+            '<span class="hint">Kept for recipe &amp; order history</span>' +
+            '<span><button class="btn ghost sm" data-act="restoreIngredient" data-id="' + i.id + '">Restore</button></span>' +
+          '</div>').join("") : "") +
       '</div></section>' +
       '<div class="stack">' +
         '<section class="card dark">' +
           '<div style="color:var(--accent);font-weight:700;font-size:13px;letter-spacing:.06em">STOCK VALUE</div>' +
           '<div style="font-size:32px;font-weight:800;margin-top:6px" class="num">' + money0(stockValue()) + '</div>' +
-          '<div style="opacity:.6;font-size:13px;margin-top:4px">' + db.ingredients.length + ' ingredients tracked</div>' +
+          '<div style="opacity:.6;font-size:13px;margin-top:4px">' + active.length + ' ingredient' + (active.length === 1 ? "" : "s") + ' tracked' +
+            (archived.length ? ' · ' + archived.length + ' archived' : "") + '</div>' +
         '</section>' +
         card("Shopping list",
           '<p class="muted" style="margin:0 0 12px">' + low.length + ' item' + (low.length === 1 ? "" : "s") + ' below reorder level.</p>' +
@@ -2481,8 +2506,9 @@ const ACTIONS = {
   /** Re-opens the dialog with what's typed so far, plus one more row. */
   addRecipeLine(d, el) {
     const draft = readForm(el);
-    draft.recipe = readRecipe(el).concat([{ ingredientId: (db.ingredients[0] || {}).id || "", qty: 0 }]);
-    if (!db.ingredients.length) return toast("Add an ingredient in Inventory first.");
+    const active = db.ingredients.find(i => !i.archived) || db.ingredients[0];
+    draft.recipe = readRecipe(el).concat([{ ingredientId: (active || {}).id || "", qty: 0 }]);
+    if (!db.ingredients.filter(i => !i.archived).length) return toast("Add an ingredient in Inventory first.");
     openProductModal(currentProductId, draft);
   },
   removeRecipeLine(d, el) {
@@ -2533,7 +2559,7 @@ const ACTIONS = {
     commit(() => db.ingredients.push({
       id: uid(), name: f.name.trim(), unit: f.unit || "kg",
       stock: round2(Math.max(0, num(f.stock))), reorder: round2(Math.max(0, num(f.reorder))),
-      cost: round4(Math.max(0, num(f.cost))), expiry: f.expiry || ""
+      cost: round4(Math.max(0, num(f.cost))), expiry: f.expiry || "", archived: false
     }), "Ingredient added.");
     clearForm(el);
   },
@@ -2552,66 +2578,56 @@ const ACTIONS = {
     if (!i) return;
     if (!f.name || !f.name.trim()) return toast("Name the ingredient.");
     if (sameName(db.ingredients, f.name, d.id)) return toast("Another ingredient already has that name.");
+    // The unit select is disabled in the dialog whenever any recipe measures
+    // this ingredient, but block it here too as the real guarantee: recipe
+    // quantities are plain numbers in the ingredient's unit, and reinterpreting
+    // them (kg -> g) would silently change every recipe's cost without a
+    // single quantity having been touched. A locked ingredient keeps its unit
+    // no matter what the form holds.
+    const inAnyRecipe = db.products.some(p => (p.recipe || []).some(l => l.ingredientId === d.id));
+    const requestedUnit = UNITS.includes(f.unit) ? f.unit : i.unit;
+    const unit = inAnyRecipe ? i.unit : requestedUnit;
     const before = round4(num(i.cost));
-    const unit = UNITS.includes(f.unit) ? f.unit : i.unit;
-    const apply = () => {
-      commit(() => Object.assign(i, {
-        name: f.name.trim(), unit,
-        stock: round2(Math.max(0, num(f.stock))),
-        reorder: round2(Math.max(0, num(f.reorder))),
-        cost: round4(Math.max(0, num(f.cost))),
-        expiry: f.expiry || ""
-      }));
-      closeModal();
-      // Recipes read the live cost, so every product repriced the moment that
-      // assignment landed. Say so, because the change is invisible otherwise.
-      const after = round4(num(i.cost));
+    commit(() => Object.assign(i, {
+      name: f.name.trim(), unit,
+      stock: round2(Math.max(0, num(f.stock))),
+      reorder: round2(Math.max(0, num(f.reorder))),
+      cost: round4(Math.max(0, num(f.cost))),
+      expiry: f.expiry || ""
+    }));
+    closeModal();
+    // Recipes read the live cost, so every product repriced the moment that
+    // assignment landed. Say so, because the change is invisible otherwise.
+    const after = round4(num(i.cost));
+    if (inAnyRecipe && requestedUnit !== i.unit) {
+      toast("Saved. The unit stays " + unit + " — it's used in a recipe, so it can't change here.");
+    } else {
       toast(after === before
         ? "Ingredient saved."
         : "Saved — " + unitMoney(before) + " to " + unitMoney(after) + " per " + i.unit + ". Product prices updated.");
-    };
-    // Recipe quantities are plain numbers in the old unit. Switching kg to g
-    // leaves "0.9" meaning 0.9 g, which silently guts every recipe that uses
-    // it — so the quantities that would be reinterpreted are named first.
-    const users = db.products.filter(p => (p.recipe || []).some(l => l.ingredientId === d.id));
-    if (unit !== i.unit && users.length) {
-      return confirmDo("Change the unit from " + i.unit + " to " + unit + "?",
-        users.length + " recipe" + (users.length === 1 ? "" : "s") + " measure " + i.name + " in " + i.unit +
-        ": " + users.map(p => {
-          const l = (p.recipe || []).find(x => x.ingredientId === d.id) || {};
-          return p.name + " (" + num(l.qty) + " " + i.unit + ")";
-        }).join(", ") + ". Those numbers are not converted — each would now mean " +
-        unit + ", changing what the recipe costs. Check the quantities and the cost per unit afterwards.",
-        "Change unit", apply);
     }
-    apply();
   },
+  restoreIngredient(d) { commit(() => { const i = byId(db.ingredients, d.id); if (i) i.archived = false; }, "Ingredient restored."); },
   deleteIngredient(d) {
     const i = byId(db.ingredients, d.id);
     if (!i) return;
     const users = db.products.filter(p => (p.recipe || []).some(l => l.ingredientId === d.id));
-    if (!users.length) {
-      return confirmDo("Delete ingredient?", i.name + " is not used in any recipe.", "Delete",
+    const baked = db.bakes.some(b => (b.deductions || []).some(x => x.ingredientId === d.id));
+    if (!users.length && !baked) {
+      return confirmDo("Delete ingredient?", i.name + " is not used in any recipe or bake record.", "Delete",
         () => commit(() => removeById(db.ingredients, d.id), "Ingredient removed."));
     }
-    // Removing it would silently change what those products cost, so say so
-    // and make the consequence the explicit choice.
-    pendingConfirm = () => commit(() => {
-      for (const p of users) {
-        p.recipe = (p.recipe || []).filter(l => l.ingredientId !== d.id);
-        if (!p.recipe.length) p.ingCost = round2(p.ingCost);
-      }
-      removeById(db.ingredients, d.id);
-    }, "Removed from " + users.length + " recipe" + (users.length === 1 ? "" : "s") + " and deleted.");
-    modal("Ingredient is in use", i.name + " is used by " + users.length + " recipe" + (users.length === 1 ? "" : "s") + ".",
-      '<div class="stack" style="gap:8px">' +
-        users.map(p => '<div class="row between" style="padding:6px 0;border-bottom:1px solid var(--line)">' +
-          '<span>' + esc(p.name) + '</span><span class="hint">' + money(costing(p).cost) + ' per unit today</span></div>').join("") +
-        '<p class="hint" style="margin:10px 0 0">Deleting it removes the ingredient from those recipes, which changes what they cost from now on. ' +
-        'Orders already booked or paid keep the cost they were committed at.</p>' +
-      '</div>',
-      [{ label: "Cancel", act: "closeModal" },
-       { label: "Remove from recipes and delete", act: "confirmYes", cls: "danger" }]);
+    // It's in a recipe or the bake log, so deleting it would either corrupt a
+    // recipe's cost or leave history pointing at nothing. Archive instead:
+    // every recipe and past record keeps resolving exactly as it does today,
+    // and the ingredient just stops offering itself for new use.
+    const parts = [];
+    if (users.length) parts.push("used by " + users.length + " recipe" + (users.length === 1 ? "" : "s"));
+    if (baked) parts.push("appears in the bake log");
+    confirmDo("Archive " + i.name + "?", i.name + " is " + parts.join(" and ") + ". Archiving keeps every recipe and " +
+      "past bake exactly as it is and hides it from new recipes and stock alerts; deleting it outright would risk " +
+      "corrupting that history.", "Archive ingredient",
+      () => commit(() => { i.archived = true; }, "Ingredient archived — recipes and history untouched."));
   },
 
   /* ---- expenses ---- */
